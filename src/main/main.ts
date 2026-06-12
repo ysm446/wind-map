@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fetchGfsWind } from './nomads';
+import { fetchArchiveWind } from './archive';
 
 // 風データの探索順: ユーザーキャッシュ → アプリ同梱サンプル
 function getWindDataCandidates(): Array<{ source: string; filePath: string }> {
@@ -39,6 +40,16 @@ ipcMain.handle('wind:fetch', async (_event, opts: { forecastHour?: number } | un
   fs.mkdirSync(cacheDir, { recursive: true });
   fs.writeFileSync(path.join(cacheDir, 'current-wind.json'), JSON.stringify(result.records));
   return { source: 'nomads', records: result.records };
+});
+
+// AWS の GFS アーカイブから過去日時の地上風を取得してキャッシュする
+ipcMain.handle('wind:fetch-archive', async (_event, opts: { time?: string } | undefined) => {
+  if (!opts?.time) throw new Error('日時が指定されていません');
+  const result = await fetchArchiveWind(opts.time);
+  const cacheDir = path.join(app.getPath('userData'), 'wind-cache');
+  fs.mkdirSync(cacheDir, { recursive: true });
+  fs.writeFileSync(path.join(cacheDir, 'current-wind.json'), JSON.stringify(result.records));
+  return { source: 'archive', records: result.records };
 });
 
 function createWindow(): void {

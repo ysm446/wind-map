@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGlobe } from './globe';
 import { WindField, makeSyntheticWind } from './wind';
 import { ParticleSystem } from './particles';
+import { GpuParticleSystem } from './gpu-particles';
 
 const GLOBE_RADIUS = 1;
 const PARTICLE_RADIUS = 1.004; // 地表より少し浮かせて Z ファイティングを避ける
@@ -11,6 +12,7 @@ const SOURCE_NAMES: Record<string, string> = {
   cache: 'GFS キャッシュ',
   sample: 'GFS 同梱サンプル',
   nomads: 'GFS NOMADS',
+  archive: 'GFS アーカイブ',
 };
 
 // 例: "GFS NOMADS / 2026-06-12 12:00 UTC (+6h)"
@@ -86,11 +88,12 @@ function init(): void {
     scene.add(stars);
   }
 
-  let particles: ParticleSystem | null = null;
+  const gpuSupported = GpuParticleSystem.isSupported(renderer);
+  let gpuParticles: GpuParticleSystem | null = null;
+  let cpuParticles: ParticleSystem | null = null;
   let windField: WindField | null = null;
 
-  const countSlider = document.getElementById('count') as HTMLInputElement;
-  const countValue = document.getElementById('count-value')!;
+  const countSelect = document.getElementById('count') as HTMLSelectElement;
   const speedSlider = document.getElementById('speed') as HTMLInputElement;
   const speedValue = document.getElementById('speed-value')!;
   const trailSlider = document.getElementById('trail') as HTMLInputElement;
@@ -102,51 +105,98 @@ function init(): void {
   const dataSourceEl = document.getElementById('data-source')!;
   const fpsEl = document.getElementById('fps')!;
 
-  function rebuildParticles(count: number): void {
-    if (!windField) return;
-    if (particles) {
-      scene.remove(particles.object3d);
-      particles.dispose();
-    }
-    particles = new ParticleSystem(
-      count,
-      PARTICLE_RADIUS,
-      windField,
-      Number(trailSlider.value),
-    );
-    particles.speedFactor = Number(speedSlider.value);
-    scene.add(particles.object3d);
+  // 軌跡スライダー値 (4〜64) を蓄積バッファの減衰率に変換する
+  function trailFadeFromSlider(): number {
+    const len = Number(trailSlider.value);
+    return Math.min(0.985, Math.max(0.6, 1 - 1.5 / len));
   }
 
-  countSlider.addEventListener('input', () => {
-    countValue.textContent = countSlider.value;
-  });
-  countSlider.addEventListener('change', () => {
-    rebuildParticles(Number(countSlider.value));
+  function rebuildParticles(): void {
+    if (!windField) return;
+    if (gpuParticles) {
+      gpuParticles.dispose();
+      gpuParticles = null;
+    }
+    if (cpuParticles) {
+      scene.remove(cpuParticles.object3d);
+      cpuParticles.dispose();
+      cpuParticles = null;
+    }
+    if (gpuSupported) {
+      gpuParticles = new GpuParticleSystem(
+        renderer,
+        windField,
+        Number(countSelect.value),
+        PARTICLE_RADIUS,
+        GLOBE_RADIUS,
+      );
+      gpuParticles.speedFactor = Number(speedSlider.value);
+      gpuParticles.trailFade = trailFadeFromSlider();
+    } else {
+      // GPU 非対応環境では CPU 移流(粒子数固定)にフォールバック
+      cpuParticles = new ParticleSystem(
+        6000,
+        PARTICLE_RADIUS,
+        windField,
+        Number(trailSlider.value),
+      );
+      cpuParticles.speedFactor = Number(speedSlider.value);
+      scene.add(cpuParticles.object3d);
+    }
+  }
+
+  // 新しい風場の適用。粒子と軌跡は保ったまま風だけ差し替える
+  function applyWind(field: WindField): void {
+    windField = field;
+    if (gpuParticles) gpuParticles.setWind(field);
+    else if (cpuParticles) cpuParticles.setWind(field);
+    else rebuildParticles();
+  }
+
+  if (!gpuSupported) {
+    countSelect.disabled = true;
+    countSelect.title = 'GPU パーティクル非対応環境のため固定 (6000)';
+  }
+
+  countSelect.addEventListener('change', () => {
+    rebuildParticles();
   });
   speedSlider.addEventListener('input', () => {
     speedValue.textContent = Number(speedSlider.value).toFixed(1);
-    if (particles) particles.speedFactor = Number(speedSlider.value);
+    if (gpuParticles) gpuParticles.speedFactor = Number(speedSlider.value);
+    if (cpuParticles) cpuParticles.speedFactor = Number(speedSlider.value);
   });
   trailSlider.addEventListener('input', () => {
     trailValue.textContent = trailSlider.value;
+    if (gpuParticles) gpuParticles.trailFade = trailFadeFromSlider();
   });
   trailSlider.addEventListener('change', () => {
-    rebuildParticles(Number(countSlider.value));
+    if (cpuParticles) rebuildParticles();
   });
   fcstSlider.addEventListener('input', () => {
     fcstValue.textContent = `+${fcstSlider.value}h`;
   });
-  fetchBtn.addEventListener('click', async () => {
+  const histTime = document.getElementById('hist-time') as HTMLInputElement;
+  const histBtn = document.getElementById('hist-btn') as HTMLButtonElement;
+
+  // 既定値: 1 年前の 00:00 UTC。上限は現在時刻
+  {
+    const now = new Date();
+    const past = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate()));
+    histTime.value = past.toISOString().slice(0, 16);
+    histTime.max = now.toISOString().slice(0, 16);
+  }
+
+  async function runFetch(fetcher: () => Promise<WindApiResult>): Promise<void> {
     fetchBtn.disabled = true;
+    histBtn.disabled = true;
     fetchStatus.textContent = '取得中…';
     try {
-      const result = await window.windApi.fetchWind(Number(fcstSlider.value));
+      const result = await fetcher();
       const field = WindField.fromGfsJson(result.records);
       if (!field) throw new Error('データを解釈できませんでした');
-      windField = field;
-      dataSourceEl.textContent = `データ: ${describeField(field, SOURCE_NAMES.nomads)}`;
-      rebuildParticles(Number(countSlider.value));
+      applyWind(field);
+      dataSourceEl.textContent = `データ: ${describeField(field, SOURCE_NAMES[result.source])}`;
       fetchStatus.textContent = '取得完了';
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -154,19 +204,33 @@ function init(): void {
       fetchStatus.textContent = `取得失敗: ${message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`;
     } finally {
       fetchBtn.disabled = false;
+      histBtn.disabled = false;
     }
+  }
+
+  fetchBtn.addEventListener('click', () => {
+    void runFetch(() => window.windApi.fetchWind(Number(fcstSlider.value)));
+  });
+  histBtn.addEventListener('click', () => {
+    if (!histTime.value) {
+      fetchStatus.textContent = '日時を入力してください';
+      return;
+    }
+    // datetime-local はタイムゾーンを持たないため UTC として解釈する
+    void runFetch(() => window.windApi.fetchArchiveWind(`${histTime.value}:00Z`));
   });
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    gpuParticles?.resize();
   });
 
   loadWindField().then(({ field, label }) => {
     windField = field;
     dataSourceEl.textContent = `データ: ${label}`;
-    rebuildParticles(Number(countSlider.value));
+    rebuildParticles();
   });
 
   let frames = 0;
@@ -174,8 +238,10 @@ function init(): void {
 
   renderer.setAnimationLoop(() => {
     controls.update();
-    if (particles) particles.update();
+    if (gpuParticles) gpuParticles.update(camera);
+    if (cpuParticles) cpuParticles.update();
     renderer.render(scene, camera);
+    if (gpuParticles) gpuParticles.composite();
 
     frames++;
     const now = performance.now();

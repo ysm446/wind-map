@@ -17,9 +17,13 @@
       <div class="control">
         <div class="control-label">
           <span>粒子数</span>
-          <span class="value" id="count-value">6000</span>
         </div>
-        <input id="count" type="range" min="1000" max="12000" step="500" value="6000" />
+        <select id="count">
+          <option value="128">16,384</option>
+          <option value="256">65,536</option>
+          <option value="512" selected>262,144</option>
+          <option value="1024">1,048,576</option>
+        </select>
       </div>
       <div class="control">
         <div class="control-label">
@@ -43,6 +47,13 @@
         <input id="fcst" type="range" min="0" max="120" step="3" value="0" />
       </div>
       <button id="fetch-btn">最新データを取得</button>
+      <div class="control">
+        <div class="control-label">
+          <span>過去日時 (UTC)</span>
+        </div>
+        <input id="hist-time" type="datetime-local" min="2021-01-01T00:00" step="10800" />
+      </div>
+      <button id="hist-btn">過去データを取得</button>
       <div class="meta" id="fetch-status"></div>
       <div class="meta" id="fps"></div>
     </div>

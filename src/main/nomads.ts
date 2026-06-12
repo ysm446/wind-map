@@ -97,7 +97,8 @@ function isGrib(bytes: Uint8Array): boolean {
   );
 }
 
-function toRecord(msg: Grib2Message): GfsRecord {
+// デコード済み GRIB2 メッセージを内部形式 (cambecc/earth 互換 JSON) に変換する
+export function gribMessageToRecord(msg: Grib2Message): GfsRecord {
   return {
     header: {
       discipline: msg.discipline,
@@ -141,7 +142,7 @@ export async function fetchGfsWind(forecastHour: number): Promise<GfsFetchResult
     }
 
     return {
-      records: [toRecord(uMsg), toRecord(vMsg)],
+      records: [gribMessageToRecord(uMsg), gribMessageToRecord(vMsg)],
       refTime: uMsg.refTime,
       forecastHour: fh,
     };

@@ -17,7 +17,15 @@
       "Bash(curl -s --max-time 60 -o ./gfs-test.grib2 \"https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_1p00.pl?file=gfs.t06z.pgrb2.1p00.f000&var_UGRD=on&var_VGRD=on&lev_10_m_above_ground=on&dir=%2Fgfs.20260612%2F06%2Fatmos\")",
       "PowerShell(npm run test:nomads)",
       "PowerShell(npm run test:nomads -- --write-cache)",
-      "PowerShell(npx tsc --noEmit; if \\($?\\) { npm run build; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p1.png\"; npx electron . } })"
+      "PowerShell(npx tsc --noEmit; if \\($?\\) { npm run build; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p1.png\"; npx electron . } })",
+      "PowerShell(npm run test:archive)",
+      "PowerShell(npm run test:archive -- 2021-02-01T12:00:00Z)",
+      "PowerShell(npm run test:archive -- 2023-08-15T03:00:00Z)",
+      "PowerShell(npx tsc --noEmit; if \\($?\\) { npm run build; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p2.png\"; npx electron . } })",
+      "PowerShell(npx tsc --noEmit; if \\($?\\) { npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p3.png\"; npx electron . } })",
+      "PowerShell($env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p3b.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-p3b.png\" -ErrorAction SilentlyContinue\\).Length)",
+      "PowerShell(npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p3c.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-p3c.png\" -ErrorAction SilentlyContinue\\).Length })",
+      "PowerShell(npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-fix-white.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-fix-white.png\" -ErrorAction SilentlyContinue\\).Length })"
     ]
   }
 }

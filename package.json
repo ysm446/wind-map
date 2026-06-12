@@ -10,7 +10,8 @@
     "build": "npm run build:renderer && npm run build:main",
     "start": "electron .",
     "dev": "npm run build && electron .",
-    "test:nomads": "esbuild scripts/test-nomads.ts --bundle --platform=node --outfile=dist/test-nomads.cjs && node dist/test-nomads.cjs"
+    "test:nomads": "esbuild scripts/test-nomads.ts --bundle --platform=node --outfile=dist/test-nomads.cjs && node dist/test-nomads.cjs",
+    "test:archive": "esbuild scripts/test-archive.ts --bundle --platform=node --outfile=dist/test-archive.cjs && node dist/test-archive.cjs"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

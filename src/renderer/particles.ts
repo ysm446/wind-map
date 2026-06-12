@@ -17,7 +17,7 @@ const COLOR_STOPS: Array<[number, [number, number, number]]> = [
   [35, [255, 90, 170]],
 ];
 
-function speedColor(speed: number): [number, number, number] {
+export function speedColor(speed: number): [number, number, number] {
   if (speed <= COLOR_STOPS[0][0]) {
     const c = COLOR_STOPS[0][1];
     return [c[0] / 255, c[1] / 255, c[2] / 255];

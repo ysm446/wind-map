@@ -77,6 +77,15 @@ export class WindField {
     );
   }
 
+  // GPU テクスチャ生成用に格子データへの読み取りアクセスを提供する
+  get uValues(): Float32Array {
+    return this.uData;
+  }
+
+  get vValues(): Float32Array {
+    return this.vData;
+  }
+
   // lon: -180..180 または 0..360、lat: -90..90。格子外(極の外側)は null。
   sample(lon: number, lat: number): WindSample | null {
     const x = ((((lon - this.lo1) % 360) + 360) % 360) / this.dx;
