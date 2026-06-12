@@ -7,25 +7,61 @@ const MAX_LAT = 85; // 極近傍は移流が破綻するためリセットする
 const FADE_IN_FRAMES = 8; // 出現直後にフェードイン
 const FADE_OUT_FRAMES = 24; // 寿命の終わりにフェードアウト
 
-// 風速 (m/s) → 色のグラデーション
-const COLOR_STOPS: Array<[number, [number, number, number]]> = [
-  [0, [70, 110, 215]],
-  [5, [80, 195, 205]],
-  [10, [125, 215, 125]],
-  [15, [235, 215, 100]],
-  [25, [255, 140, 85]],
-  [35, [255, 90, 170]],
-];
+// 風速 (m/s) → 色のグラデーション。[風速, [R, G, B]] の列(風速昇順)
+export type ColorStops = Array<[number, [number, number, number]]>;
 
-export function speedColor(speed: number): [number, number, number] {
-  if (speed <= COLOR_STOPS[0][0]) {
-    const c = COLOR_STOPS[0][1];
+// 配色プリセット。Viridis / Turbo は代表点をサンプリングした折れ線近似
+export const COLOR_SCHEMES: Record<string, ColorStops> = {
+  standard: [
+    [0, [70, 110, 215]],
+    [5, [80, 195, 205]],
+    [10, [125, 215, 125]],
+    [15, [235, 215, 100]],
+    [25, [255, 140, 85]],
+    [35, [255, 90, 170]],
+  ],
+  // 暗い青緑の海から強風帯が金色〜赤に浮かぶ、earth.nullschool 風の配色
+  earth: [
+    [0, [10, 36, 47]],
+    [3, [36, 89, 98]],
+    [7, [62, 138, 109]],
+    [11, [109, 174, 104]],
+    [15, [164, 199, 100]],
+    [20, [222, 209, 107]],
+    [26, [240, 160, 71]],
+    [35, [214, 64, 38]],
+  ],
+  viridis: [
+    [0, [68, 1, 84]],
+    [8.75, [59, 82, 139]],
+    [17.5, [33, 145, 140]],
+    [26.25, [94, 201, 98]],
+    [35, [253, 231, 37]],
+  ],
+  turbo: [
+    [0, [48, 18, 59]],
+    [5, [64, 112, 232]],
+    [10, [38, 189, 221]],
+    [15, [112, 247, 116]],
+    [20, [227, 221, 46]],
+    [25, [253, 156, 49]],
+    [30, [217, 69, 28]],
+    [35, [122, 4, 3]],
+  ],
+};
+
+export function speedColor(
+  speed: number,
+  stops: ColorStops = COLOR_SCHEMES.standard,
+): [number, number, number] {
+  if (speed <= stops[0][0]) {
+    const c = stops[0][1];
     return [c[0] / 255, c[1] / 255, c[2] / 255];
   }
-  for (let i = 1; i < COLOR_STOPS.length; i++) {
-    if (speed <= COLOR_STOPS[i][0]) {
-      const [s0, c0] = COLOR_STOPS[i - 1];
-      const [s1, c1] = COLOR_STOPS[i];
+  for (let i = 1; i < stops.length; i++) {
+    if (speed <= stops[i][0]) {
+      const [s0, c0] = stops[i - 1];
+      const [s1, c1] = stops[i];
       const t = (speed - s0) / (s1 - s0);
       return [
         (c0[0] + (c1[0] - c0[0]) * t) / 255,
@@ -34,13 +70,15 @@ export function speedColor(speed: number): [number, number, number] {
       ];
     }
   }
-  const c = COLOR_STOPS[COLOR_STOPS.length - 1][1];
+  const c = stops[stops.length - 1][1];
   return [c[0] / 255, c[1] / 255, c[2] / 255];
 }
 
 export class ParticleSystem {
   readonly object3d: THREE.LineSegments;
   speedFactor = 1.0;
+  brightness = 1.0;
+  colorStops: ColorStops = COLOR_SCHEMES.standard;
 
   private readonly count: number;
   private readonly radius: number;
@@ -159,10 +197,11 @@ export class ParticleSystem {
           (this.maxAges[i] - this.ages[i]) / FADE_OUT_FRAMES,
         ),
       );
-      let [r, g, b] = speedColor(this.speeds[i]);
-      r *= life;
-      g *= life;
-      b *= life;
+      let [r, g, b] = speedColor(this.speeds[i], this.colorStops);
+      const lum = life * this.brightness;
+      r *= lum;
+      g *= lum;
+      b *= lum;
       const trailBase = i * TRAIL * 3;
       for (let k = 0; k < TRAIL - 1; k++) {
         const seg = (i * (TRAIL - 1) + k) * 6;

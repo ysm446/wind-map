@@ -177,6 +177,76 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+.check-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+input[type="checkbox"] {
+  accent-color: #9fb4d4;
+  cursor: pointer;
+}
+
+#overlay-detail.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+#speed-legend .bar {
+  height: 6px;
+  border-radius: 3px;
+}
+
+#speed-legend .labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #8b97a8;
+  margin-top: 2px;
+}
+
+#appearance {
+  margin-bottom: 12px;
+}
+
+#appearance summary {
+  cursor: pointer;
+  color: #9fb4d4;
+  margin-bottom: 8px;
+}
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.color-row .name {
+  flex: 1;
+}
+
+.color-row input[type="range"].mini-op {
+  width: 64px;
+  height: 18px;
+}
+
+input[type="color"] {
+  width: 36px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+#colors-reset {
+  margin-top: 4px;
+}
+
 #fetch-status {
   min-height: 17px;
 }

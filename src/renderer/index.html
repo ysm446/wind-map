@@ -34,11 +34,84 @@
       </div>
       <div class="control">
         <div class="control-label">
+          <span>明度</span>
+          <span class="value" id="brightness-value">1.00</span>
+        </div>
+        <input id="brightness" type="range" min="0.1" max="2" step="0.05" value="1" />
+      </div>
+      <div class="control">
+        <div class="control-label">
           <span>軌跡の長さ</span>
           <span class="value" id="trail-value">32</span>
         </div>
         <input id="trail" type="range" min="4" max="256" step="2" value="32" />
       </div>
+      <div class="control">
+        <label class="check-label">
+          <input id="overlay" type="checkbox" />
+          <span>風速カラーオーバーレイ</span>
+        </label>
+      </div>
+      <div class="control" id="overlay-detail">
+        <div class="control-label">
+          <span>オーバーレイ濃度</span>
+          <span class="value" id="overlay-opacity-value">0.30</span>
+        </div>
+        <input id="overlay-opacity" type="range" min="0.1" max="1" step="0.05" value="0.3" />
+        <div id="speed-legend">
+          <div class="bar"></div>
+          <div class="labels"><span>0</span><span>35 m/s</span></div>
+        </div>
+      </div>
+      <details id="appearance">
+        <summary>表示設定</summary>
+        <div class="control">
+          <div class="control-label">
+            <span>パーティクル配色</span>
+          </div>
+          <select id="scheme">
+            <option value="standard" selected>標準</option>
+            <option value="earth">アース</option>
+            <option value="viridis">Viridis</option>
+            <option value="turbo">Turbo</option>
+          </select>
+        </div>
+        <div class="color-row">
+          <span class="name">海岸線</span>
+          <input id="col-coast-op" class="mini-op" type="range" min="0" max="1" step="0.05" value="0.5" />
+          <input id="col-coast" type="color" value="#9db4d6" />
+        </div>
+        <div class="color-row">
+          <span class="name">国境線</span>
+          <input id="col-border-op" class="mini-op" type="range" min="0" max="1" step="0.05" value="0.3" />
+          <input id="col-border" type="color" value="#8593a8" />
+        </div>
+        <div class="color-row">
+          <span class="name">海</span>
+          <input id="col-ocean" type="color" value="#0c1422" />
+        </div>
+        <div class="color-row">
+          <span class="name">陸</span>
+          <input id="col-land" type="color" value="#1d2939" />
+        </div>
+        <div class="color-row">
+          <span class="name">経緯線</span>
+          <input id="col-grat" type="color" value="#ffffff" />
+        </div>
+        <div class="color-row">
+          <span class="name">大気光</span>
+          <input id="col-halo" type="color" value="#4a7fc9" />
+        </div>
+        <div class="color-row">
+          <span class="name">背景</span>
+          <input id="col-bg" type="color" value="#0a0e14" />
+        </div>
+        <div class="color-row">
+          <span class="name">星</span>
+          <input id="col-stars" type="color" value="#5a6a82" />
+        </div>
+        <button id="colors-reset" type="button">既定に戻す</button>
+      </details>
       <div class="control">
         <div class="control-label">
           <span>予報時刻</span>

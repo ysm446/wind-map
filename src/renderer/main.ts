@@ -1,9 +1,25 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createGlobe, createCoastlines, createBorders } from './globe';
+import { Globe, createCoastlines, createBorders } from './globe';
 import { WindField, makeSyntheticWind } from './wind';
-import { ParticleSystem } from './particles';
+import { ParticleSystem, COLOR_SCHEMES, type ColorStops } from './particles';
 import { GpuParticleSystem } from './gpu-particles';
+import { SpeedOverlay } from './overlay';
+import { RAMP_MAX_SPEED } from './wind-texture';
+
+// 表示設定の既定色。index.html の input の初期値と一致させておく
+const DEFAULT_COLORS: Required<ColorSettings> = {
+  coastline: '#9db4d6',
+  coastlineOpacity: 0.5,
+  border: '#8593a8',
+  borderOpacity: 0.3,
+  ocean: '#0c1422',
+  land: '#1d2939',
+  graticule: '#ffffff',
+  halo: '#4a7fc9',
+  background: '#0a0e14',
+  stars: '#5a6a82',
+};
 
 const GLOBE_RADIUS = 1;
 const PARTICLE_RADIUS = 1.004; // 地表より少し浮かせて Z ファイティングを避ける
@@ -49,7 +65,7 @@ async function init(): Promise<void> {
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0e14);
+  scene.background = new THREE.Color(DEFAULT_COLORS.background);
 
   const camera = new THREE.PerspectiveCamera(
     45,
@@ -67,7 +83,12 @@ async function init(): Promise<void> {
   controls.maxDistance = 8;
   controls.rotateSpeed = 0.5;
 
-  scene.add(createGlobe(GLOBE_RADIUS));
+  const globe = new Globe(
+    GLOBE_RADIUS,
+    { ocean: DEFAULT_COLORS.ocean, land: DEFAULT_COLORS.land, graticule: DEFAULT_COLORS.graticule },
+    DEFAULT_COLORS.halo,
+  );
+  scene.add(globe.group);
 
   // ベクター海岸線・国境線 (LOD 付き)。地表より少し浮かせて Z ファイティングを避ける
   const coastlines = createCoastlines(GLOBE_RADIUS * 1.0015);
@@ -75,7 +96,16 @@ async function init(): Promise<void> {
   scene.add(coastlines.group);
   scene.add(borders.group);
 
+  // 風速カラーオーバーレイ。海岸線・国境線より下、地表より上に重ねる
+  const overlay = new SpeedOverlay(GLOBE_RADIUS * 1.0008);
+  scene.add(overlay.mesh);
+
   // 薄い星空
+  const starsMat = new THREE.PointsMaterial({
+    color: DEFAULT_COLORS.stars,
+    size: 0.06,
+    sizeAttenuation: true,
+  });
   {
     const starCount = 1200;
     const positions = new Float32Array(starCount * 3);
@@ -87,11 +117,7 @@ async function init(): Promise<void> {
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const stars = new THREE.Points(
-      geometry,
-      new THREE.PointsMaterial({ color: 0x5a6a82, size: 0.06, sizeAttenuation: true }),
-    );
-    scene.add(stars);
+    scene.add(new THREE.Points(geometry, starsMat));
   }
 
   const gpuSupported = GpuParticleSystem.isSupported(renderer);
@@ -102,14 +128,37 @@ async function init(): Promise<void> {
   const countSelect = document.getElementById('count') as HTMLSelectElement;
   const speedSlider = document.getElementById('speed') as HTMLInputElement;
   const speedValue = document.getElementById('speed-value')!;
+  const brightnessSlider = document.getElementById('brightness') as HTMLInputElement;
+  const brightnessValue = document.getElementById('brightness-value')!;
   const trailSlider = document.getElementById('trail') as HTMLInputElement;
   const trailValue = document.getElementById('trail-value')!;
+  const overlayCheck = document.getElementById('overlay') as HTMLInputElement;
+  const overlayDetail = document.getElementById('overlay-detail')!;
+  const overlayOpacity = document.getElementById('overlay-opacity') as HTMLInputElement;
+  const overlayOpacityValue = document.getElementById('overlay-opacity-value')!;
   const fcstSlider = document.getElementById('fcst') as HTMLInputElement;
   const fcstValue = document.getElementById('fcst-value')!;
   const fetchBtn = document.getElementById('fetch-btn') as HTMLButtonElement;
   const fetchStatus = document.getElementById('fetch-status')!;
   const dataSourceEl = document.getElementById('data-source')!;
   const fpsEl = document.getElementById('fps')!;
+  const schemeSelect = document.getElementById('scheme') as HTMLSelectElement;
+  const colorsResetBtn = document.getElementById('colors-reset') as HTMLButtonElement;
+
+  // 色設定の input 要素。キーは ColorSettings / DEFAULT_COLORS と対応する
+  const colorEl = (id: string) => document.getElementById(id) as HTMLInputElement;
+  const colorInputs = {
+    coastline: colorEl('col-coast'),
+    border: colorEl('col-border'),
+    ocean: colorEl('col-ocean'),
+    land: colorEl('col-land'),
+    graticule: colorEl('col-grat'),
+    halo: colorEl('col-halo'),
+    background: colorEl('col-bg'),
+    stars: colorEl('col-stars'),
+  } as const;
+  const coastOpInput = colorEl('col-coast-op');
+  const borderOpInput = colorEl('col-border-op');
 
   // 保存済みの UI 設定 (data/settings.json) を起動時に反映する
   function applySettings(s: AppSettings | null): void {
@@ -124,6 +173,10 @@ async function init(): Promise<void> {
       speedSlider.value = String(Math.min(1, Math.max(0.1, s.speed)));
       speedValue.textContent = Number(speedSlider.value).toFixed(1);
     }
+    if (typeof s.brightness === 'number' && Number.isFinite(s.brightness)) {
+      brightnessSlider.value = String(Math.min(2, Math.max(0.1, s.brightness)));
+      brightnessValue.textContent = Number(brightnessSlider.value).toFixed(2);
+    }
     if (typeof s.trail === 'number' && Number.isFinite(s.trail)) {
       trailSlider.value = String(Math.min(256, Math.max(4, Math.round(s.trail))));
       trailValue.textContent = trailSlider.value;
@@ -131,6 +184,26 @@ async function init(): Promise<void> {
     if (typeof s.forecastHour === 'number' && Number.isFinite(s.forecastHour)) {
       fcstSlider.value = String(Math.min(120, Math.max(0, Math.round(s.forecastHour / 3) * 3)));
       fcstValue.textContent = `+${fcstSlider.value}h`;
+    }
+    if (typeof s.overlay === 'boolean') overlayCheck.checked = s.overlay;
+    if (typeof s.overlayOpacity === 'number' && Number.isFinite(s.overlayOpacity)) {
+      overlayOpacity.value = String(Math.min(1, Math.max(0.1, s.overlayOpacity)));
+    }
+    if (typeof s.particleScheme === 'string' && s.particleScheme in COLOR_SCHEMES) {
+      schemeSelect.value = s.particleScheme;
+    }
+    if (s.colors) {
+      const hex = /^#[0-9a-fA-F]{6}$/;
+      for (const key of Object.keys(colorInputs) as Array<keyof typeof colorInputs>) {
+        const v = s.colors[key];
+        if (typeof v === 'string' && hex.test(v)) colorInputs[key].value = v;
+      }
+      if (typeof s.colors.coastlineOpacity === 'number' && Number.isFinite(s.colors.coastlineOpacity)) {
+        coastOpInput.value = String(Math.min(1, Math.max(0, s.colors.coastlineOpacity)));
+      }
+      if (typeof s.colors.borderOpacity === 'number' && Number.isFinite(s.colors.borderOpacity)) {
+        borderOpInput.value = String(Math.min(1, Math.max(0, s.colors.borderOpacity)));
+      }
     }
   }
 
@@ -142,14 +215,109 @@ async function init(): Promise<void> {
         .saveSettings({
           particleTexSize: Number(countSelect.value),
           speed: Number(speedSlider.value),
+          brightness: Number(brightnessSlider.value),
           trail: Number(trailSlider.value),
           forecastHour: Number(fcstSlider.value),
+          overlay: overlayCheck.checked,
+          overlayOpacity: Number(overlayOpacity.value),
+          particleScheme: schemeSelect.value,
+          colors: {
+            coastline: colorInputs.coastline.value,
+            coastlineOpacity: Number(coastOpInput.value),
+            border: colorInputs.border.value,
+            borderOpacity: Number(borderOpInput.value),
+            ocean: colorInputs.ocean.value,
+            land: colorInputs.land.value,
+            graticule: colorInputs.graticule.value,
+            halo: colorInputs.halo.value,
+            background: colorInputs.background.value,
+            stars: colorInputs.stars.value,
+          },
         })
         .catch((err) => console.error('settings save failed', err));
     }, 500);
   }
 
   applySettings(await window.windApi.getSettings().catch(() => null));
+
+  function currentStops(): ColorStops {
+    return COLOR_SCHEMES[schemeSelect.value] ?? COLOR_SCHEMES.standard;
+  }
+
+  // 凡例のグラデーションは粒子と同じ配色ストップから生成して一致させる
+  function renderLegend(stops: ColorStops): void {
+    const bar = overlayDetail.querySelector<HTMLElement>('#speed-legend .bar')!;
+    bar.style.background = `linear-gradient(to right, ${stops
+      .map(([s, [r, g, b]]) => `rgb(${r}, ${g}, ${b}) ${((s / RAMP_MAX_SPEED) * 100).toFixed(1)}%`)
+      .join(', ')})`;
+  }
+
+  // 配色プリセットを粒子・オーバーレイ・凡例へ反映する
+  function applyScheme(): void {
+    const stops = currentStops();
+    if (gpuParticles) gpuParticles.setColorStops(stops);
+    if (cpuParticles) cpuParticles.colorStops = stops;
+    overlay.setColorStops(stops);
+    renderLegend(stops);
+  }
+
+  // 地表テクスチャの再生成は重いので、ピッカー操作中は 150ms に 1 回へ間引く
+  let surfaceTimer: number | undefined;
+  function applySurfaceColors(): void {
+    if (surfaceTimer !== undefined) return;
+    surfaceTimer = window.setTimeout(() => {
+      surfaceTimer = undefined;
+      globe.setSurfaceColors({
+        ocean: colorInputs.ocean.value,
+        land: colorInputs.land.value,
+        graticule: colorInputs.graticule.value,
+      });
+    }, 150);
+  }
+
+  function applyColors(): void {
+    coastlines.setColor(colorInputs.coastline.value);
+    coastlines.setOpacity(Number(coastOpInput.value));
+    borders.setColor(colorInputs.border.value);
+    borders.setOpacity(Number(borderOpInput.value));
+    globe.setHaloColor(colorInputs.halo.value);
+    (scene.background as THREE.Color).set(colorInputs.background.value);
+    starsMat.color.set(colorInputs.stars.value);
+    applySurfaceColors();
+  }
+  applyColors();
+  applyScheme();
+
+  for (const input of [...Object.values(colorInputs), coastOpInput, borderOpInput]) {
+    input.addEventListener('input', () => {
+      applyColors();
+      scheduleSave();
+    });
+  }
+  schemeSelect.addEventListener('change', () => {
+    applyScheme();
+    scheduleSave();
+  });
+  colorsResetBtn.addEventListener('click', () => {
+    for (const key of Object.keys(colorInputs) as Array<keyof typeof colorInputs>) {
+      colorInputs[key].value = DEFAULT_COLORS[key];
+    }
+    coastOpInput.value = String(DEFAULT_COLORS.coastlineOpacity);
+    borderOpInput.value = String(DEFAULT_COLORS.borderOpacity);
+    schemeSelect.value = 'standard';
+    applyColors();
+    applyScheme();
+    scheduleSave();
+  });
+
+  // チェックボックス・スライダーの現在値をオーバーレイへ反映する
+  function syncOverlay(): void {
+    overlay.setEnabled(overlayCheck.checked);
+    overlay.setOpacity(Number(overlayOpacity.value));
+    overlayOpacityValue.textContent = Number(overlayOpacity.value).toFixed(2);
+    overlayDetail.classList.toggle('disabled', !overlayCheck.checked);
+  }
+  syncOverlay();
 
   // 軌跡スライダー値 (4〜256) を蓄積バッファの減衰率に変換する
   function trailFadeFromSlider(): number {
@@ -178,6 +346,8 @@ async function init(): Promise<void> {
       );
       gpuParticles.speedFactor = Number(speedSlider.value);
       gpuParticles.trailFade = trailFadeFromSlider();
+      gpuParticles.brightness = Number(brightnessSlider.value);
+      gpuParticles.setColorStops(currentStops());
     } else {
       // GPU 非対応環境では CPU 移流(粒子数固定)にフォールバック。
       // 軌跡は頂点数に直結するため CPU では 64 点までに抑える
@@ -188,6 +358,8 @@ async function init(): Promise<void> {
         Math.min(64, Number(trailSlider.value)),
       );
       cpuParticles.speedFactor = Number(speedSlider.value);
+      cpuParticles.brightness = Number(brightnessSlider.value);
+      cpuParticles.colorStops = currentStops();
       scene.add(cpuParticles.object3d);
     }
   }
@@ -195,6 +367,7 @@ async function init(): Promise<void> {
   // 新しい風場の適用。粒子と軌跡は保ったまま風だけ差し替える
   function applyWind(field: WindField): void {
     windField = field;
+    overlay.setWind(field);
     if (gpuParticles) gpuParticles.setWind(field);
     else if (cpuParticles) cpuParticles.setWind(field);
     else rebuildParticles();
@@ -215,6 +388,12 @@ async function init(): Promise<void> {
     if (cpuParticles) cpuParticles.speedFactor = Number(speedSlider.value);
     scheduleSave();
   });
+  brightnessSlider.addEventListener('input', () => {
+    brightnessValue.textContent = Number(brightnessSlider.value).toFixed(2);
+    if (gpuParticles) gpuParticles.brightness = Number(brightnessSlider.value);
+    if (cpuParticles) cpuParticles.brightness = Number(brightnessSlider.value);
+    scheduleSave();
+  });
   trailSlider.addEventListener('input', () => {
     trailValue.textContent = trailSlider.value;
     if (gpuParticles) gpuParticles.trailFade = trailFadeFromSlider();
@@ -222,6 +401,14 @@ async function init(): Promise<void> {
   });
   trailSlider.addEventListener('change', () => {
     if (cpuParticles) rebuildParticles();
+  });
+  overlayCheck.addEventListener('change', () => {
+    syncOverlay();
+    scheduleSave();
+  });
+  overlayOpacity.addEventListener('input', () => {
+    syncOverlay();
+    scheduleSave();
   });
   fcstSlider.addEventListener('input', () => {
     fcstValue.textContent = `+${fcstSlider.value}h`;
@@ -279,9 +466,8 @@ async function init(): Promise<void> {
   });
 
   loadWindField().then(({ field, label }) => {
-    windField = field;
     dataSourceEl.textContent = `データ: ${label}`;
-    rebuildParticles();
+    applyWind(field);
   });
 
   // 動作検証用 (WINDMAP_SCREENSHOT) にカメラ状態を覗けるようにしておく

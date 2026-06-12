@@ -13,10 +13,10 @@
 
 import * as THREE from 'three';
 import { WindField } from './wind';
-import { speedColor } from './particles';
+import { type ColorStops } from './particles';
+import { createWindDataTexture, createSpeedRampTexture, RAMP_MAX_SPEED } from './wind-texture';
 
 const BASE_DEG_PER_FRAME = 0.03; // 風速 1 m/s あたりの 1 フレーム移動量(度)
-const RAMP_MAX_SPEED = 35; // 配色の上限風速 (m/s)
 const MOVING_FADE = 0.82; // カメラ操作中は軌跡を速く消してスミアを抑える
 
 const QUAD_VS = /* glsl */ `
@@ -91,9 +91,10 @@ void main() {
 const COMPOSITE_FS = /* glsl */ `
 precision highp float;
 uniform sampler2D uTrail;
+uniform float uBrightness;
 varying vec2 vUv;
 void main() {
-  gl_FragColor = vec4(texture2D(uTrail, vUv).rgb, 1.0);
+  gl_FragColor = vec4(texture2D(uTrail, vUv).rgb * uBrightness, 1.0);
 }
 `;
 
@@ -141,23 +142,6 @@ void main() {
 }
 `;
 
-function makeRampTexture(): THREE.DataTexture {
-  const width = 256;
-  const data = new Uint8Array(width * 4);
-  for (let i = 0; i < width; i++) {
-    const [r, g, b] = speedColor((i / (width - 1)) * RAMP_MAX_SPEED);
-    data[i * 4] = Math.round(r * 255);
-    data[i * 4 + 1] = Math.round(g * 255);
-    data[i * 4 + 2] = Math.round(b * 255);
-    data[i * 4 + 3] = 255;
-  }
-  const tex = new THREE.DataTexture(data, width, 1, THREE.RGBAFormat);
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.needsUpdate = true;
-  return tex;
-}
-
 function makeStateTarget(size: number): THREE.WebGLRenderTarget {
   const rt = new THREE.WebGLRenderTarget(size, size, {
     format: THREE.RGBAFormat,
@@ -180,6 +164,7 @@ function makeQuadScene(material: THREE.ShaderMaterial): THREE.Scene {
 export class GpuParticleSystem {
   speedFactor = 1.0;
   trailFade = 0.95; // 静止時の軌跡の減衰率 (1 に近いほど長い)
+  brightness = 1.0; // 合成時に軌跡レイヤー全体へ乗算する
 
   private readonly renderer: THREE.WebGLRenderer;
   private readonly quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -223,7 +208,7 @@ export class GpuParticleSystem {
     globeRadius: number,
   ) {
     this.renderer = renderer;
-    this.rampTexture = makeRampTexture();
+    this.rampTexture = createSpeedRampTexture();
 
     // 初期状態: 一様分布 + 寿命をばらけさせる
     const count = stateSize * stateSize;
@@ -284,7 +269,7 @@ export class GpuParticleSystem {
     this.fadeScene = makeQuadScene(this.fadeMat);
 
     this.compositeMat = new THREE.ShaderMaterial({
-      uniforms: { uTrail: { value: null } },
+      uniforms: { uTrail: { value: null }, uBrightness: { value: this.brightness } },
       vertexShader: QUAD_VS,
       fragmentShader: COMPOSITE_FS,
       transparent: true,
@@ -368,31 +353,20 @@ export class GpuParticleSystem {
     return { trailA, trailB };
   }
 
-  setWind(wind: WindField): void {
-    const { nx, ny } = wind;
-    const data = new Uint16Array(nx * ny * 4);
-    const u = wind.uValues;
-    const v = wind.vValues;
-    const one = THREE.DataUtils.toHalfFloat(1);
-    for (let k = 0; k < nx * ny; k++) {
-      data[k * 4] = THREE.DataUtils.toHalfFloat(u[k]);
-      data[k * 4 + 1] = THREE.DataUtils.toHalfFloat(v[k]);
-      data[k * 4 + 2] = 0;
-      data[k * 4 + 3] = one;
-    }
-    const tex = new THREE.DataTexture(data, nx, ny, THREE.RGBAFormat, THREE.HalfFloatType);
-    tex.wrapS = THREE.RepeatWrapping; // 経度方向は日付変更線をまたいで補間する
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.generateMipmaps = false;
-    tex.needsUpdate = true;
+  setColorStops(stops: ColorStops): void {
+    const tex = createSpeedRampTexture(stops);
+    this.rampTexture.dispose();
+    this.rampTexture = tex;
+    this.pointsMat.uniforms.uRamp.value = tex;
+  }
 
+  setWind(wind: WindField): void {
+    const tex = createWindDataTexture(wind);
     this.windTexture?.dispose();
     this.windTexture = tex;
     this.uWind.value = tex;
     this.uGrid.value.set(wind.lo1, wind.la1, wind.dx, wind.dy);
-    this.uGridSize.value.set(nx, ny);
+    this.uGridSize.value.set(wind.nx, wind.ny);
   }
 
   // 毎フレーム、メインシーンの描画前に呼ぶ
@@ -454,6 +428,7 @@ export class GpuParticleSystem {
     const prevAutoClear = renderer.autoClear;
     renderer.autoClear = false;
     this.compositeMat.uniforms.uTrail.value = this.trailRead.texture;
+    this.compositeMat.uniforms.uBrightness.value = this.brightness;
     renderer.render(this.compositeScene, this.quadCam);
     renderer.autoClear = prevAutoClear;
   }

@@ -31,10 +31,17 @@ interface GeoJsonFeature {
   geometry: GeoJsonGeometry;
 }
 
+// 地表テクスチャと大気光の色。UI から変更できる
+export interface SurfaceColors {
+  ocean: string;
+  land: string;
+  graticule: string; // 経緯線。不透明度は固定 (0.05)
+}
+
 // Natural Earth の陸地 GeoJSON を等距円筒図法でキャンバスに描き、テクスチャにする。
 // 画像ファイルを使わないので file:// 環境でも CORS/taint の問題が出ない。
 // 海岸線の輪郭は別途ベクターライン (Coastlines) で重ねるため、ここは塗りのみ。
-function createEarthTexture(): THREE.CanvasTexture {
+function createEarthTexture(colors: SurfaceColors): THREE.CanvasTexture {
   const w = 4096;
   const h = 2048;
   const canvas = document.createElement('canvas');
@@ -43,11 +50,12 @@ function createEarthTexture(): THREE.CanvasTexture {
   const ctx = canvas.getContext('2d')!;
 
   // 海
-  ctx.fillStyle = '#0c1422';
+  ctx.fillStyle = colors.ocean;
   ctx.fillRect(0, 0, w, h);
 
   // 経緯線(30°ごと)
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  ctx.strokeStyle = colors.graticule;
+  ctx.globalAlpha = 0.05;
   ctx.lineWidth = 1;
   for (let lon = -180; lon <= 180; lon += 30) {
     const x = ((lon + 180) / 360) * w;
@@ -64,6 +72,8 @@ function createEarthTexture(): THREE.CanvasTexture {
     ctx.stroke();
   }
 
+  ctx.globalAlpha = 1;
+
   const projectRing = (ring: number[][]) => {
     ctx.beginPath();
     for (let i = 0; i < ring.length; i++) {
@@ -75,7 +85,7 @@ function createEarthTexture(): THREE.CanvasTexture {
     ctx.closePath();
   };
 
-  ctx.fillStyle = '#1d2939';
+  ctx.fillStyle = colors.land;
 
   const features = (landGeo as { features: GeoJsonFeature[] }).features;
   for (const feature of features) {
@@ -171,12 +181,11 @@ export class LodLines {
 
   constructor(opts: LodLinesOptions) {
     this.opts = opts;
-    // 加算合成で発光風にし、粒子のグローと馴染ませる
+    // 通常のアルファ合成。加算だとオーバーレイ等の明るい下地で白飛びする
     this.material = new THREE.LineBasicMaterial({
       color: opts.color,
       transparent: true,
       opacity: opts.opacity,
-      blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     this.lod110 = new THREE.LineSegments(
@@ -189,6 +198,14 @@ export class LodLines {
     );
     this.lod50.visible = false;
     this.group.add(this.lod110, this.lod50);
+  }
+
+  setColor(color: string): void {
+    this.material.color.set(color);
+  }
+
+  setOpacity(opacity: number): void {
+    this.material.opacity = opacity;
   }
 
   // 毎フレーム呼ぶ。10m は初回要求時に動的 import で遅延ロードする
@@ -244,27 +261,35 @@ export function createBorders(radius: number): LodLines {
   });
 }
 
-export function createGlobe(radius: number): THREE.Group {
-  const group = new THREE.Group();
+// 地球本体 + 大気光。色は UI から差し替えられる
+export class Globe {
+  readonly group = new THREE.Group();
+  private readonly surfaceMat: THREE.MeshBasicMaterial;
+  private readonly haloMat: THREE.MeshBasicMaterial;
 
-  const sphere = new THREE.Mesh(
-    new THREE.SphereGeometry(radius, 96, 48),
-    new THREE.MeshBasicMaterial({ map: createEarthTexture() }),
-  );
-  group.add(sphere);
+  constructor(radius: number, colors: SurfaceColors, haloColor: string) {
+    this.surfaceMat = new THREE.MeshBasicMaterial({ map: createEarthTexture(colors) });
+    this.group.add(new THREE.Mesh(new THREE.SphereGeometry(radius, 96, 48), this.surfaceMat));
 
-  // ふちの淡い大気光
-  const halo = new THREE.Mesh(
-    new THREE.SphereGeometry(radius * 1.015, 96, 48),
-    new THREE.MeshBasicMaterial({
-      color: 0x4a7fc9,
+    // ふちの淡い大気光
+    this.haloMat = new THREE.MeshBasicMaterial({
+      color: haloColor,
       transparent: true,
       opacity: 0.07,
       side: THREE.BackSide,
       depthWrite: false,
-    }),
-  );
-  group.add(halo);
+    });
+    this.group.add(new THREE.Mesh(new THREE.SphereGeometry(radius * 1.015, 96, 48), this.haloMat));
+  }
 
-  return group;
+  // テクスチャの再生成を伴うので、呼び出し側で連続呼び出しを抑制すること
+  setSurfaceColors(colors: SurfaceColors): void {
+    const tex = createEarthTexture(colors);
+    this.surfaceMat.map?.dispose();
+    this.surfaceMat.map = tex;
+  }
+
+  setHaloColor(color: string): void {
+    this.haloMat.color.set(color);
+  }
 }
