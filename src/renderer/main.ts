@@ -121,11 +121,11 @@ async function init(): Promise<void> {
       countSelect.value = String(s.particleTexSize);
     }
     if (typeof s.speed === 'number' && Number.isFinite(s.speed)) {
-      speedSlider.value = String(Math.min(3, Math.max(0.1, s.speed)));
+      speedSlider.value = String(Math.min(1, Math.max(0.1, s.speed)));
       speedValue.textContent = Number(speedSlider.value).toFixed(1);
     }
     if (typeof s.trail === 'number' && Number.isFinite(s.trail)) {
-      trailSlider.value = String(Math.min(64, Math.max(4, Math.round(s.trail))));
+      trailSlider.value = String(Math.min(256, Math.max(4, Math.round(s.trail))));
       trailValue.textContent = trailSlider.value;
     }
     if (typeof s.forecastHour === 'number' && Number.isFinite(s.forecastHour)) {
@@ -151,10 +151,10 @@ async function init(): Promise<void> {
 
   applySettings(await window.windApi.getSettings().catch(() => null));
 
-  // 軌跡スライダー値 (4〜64) を蓄積バッファの減衰率に変換する
+  // 軌跡スライダー値 (4〜256) を蓄積バッファの減衰率に変換する
   function trailFadeFromSlider(): number {
     const len = Number(trailSlider.value);
-    return Math.min(0.985, Math.max(0.6, 1 - 1.5 / len));
+    return Math.min(0.995, Math.max(0.6, 1 - 1.5 / len));
   }
 
   function rebuildParticles(): void {
@@ -179,12 +179,13 @@ async function init(): Promise<void> {
       gpuParticles.speedFactor = Number(speedSlider.value);
       gpuParticles.trailFade = trailFadeFromSlider();
     } else {
-      // GPU 非対応環境では CPU 移流(粒子数固定)にフォールバック
+      // GPU 非対応環境では CPU 移流(粒子数固定)にフォールバック。
+      // 軌跡は頂点数に直結するため CPU では 64 点までに抑える
       cpuParticles = new ParticleSystem(
         6000,
         PARTICLE_RADIUS,
         windField,
-        Number(trailSlider.value),
+        Math.min(64, Number(trailSlider.value)),
       );
       cpuParticles.speedFactor = Number(speedSlider.value);
       scene.add(cpuParticles.object3d);
