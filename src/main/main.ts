@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fetchGfsWind } from './nomads';
 
 // 風データの探索順: ユーザーキャッシュ → アプリ同梱サンプル
 function getWindDataCandidates(): Array<{ source: string; filePath: string }> {
@@ -28,6 +29,16 @@ ipcMain.handle('wind:get', async () => {
     }
   }
   return null;
+});
+
+// NOMADS から最新の GFS 地上風を取得してキャッシュする
+ipcMain.handle('wind:fetch', async (_event, opts: { forecastHour?: number } | undefined) => {
+  const forecastHour = typeof opts?.forecastHour === 'number' ? opts.forecastHour : 0;
+  const result = await fetchGfsWind(forecastHour);
+  const cacheDir = path.join(app.getPath('userData'), 'wind-cache');
+  fs.mkdirSync(cacheDir, { recursive: true });
+  fs.writeFileSync(path.join(cacheDir, 'current-wind.json'), JSON.stringify(result.records));
+  return { source: 'nomads', records: result.records };
 });
 
 function createWindow(): void {

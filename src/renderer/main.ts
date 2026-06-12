@@ -7,17 +7,29 @@ import { ParticleSystem } from './particles';
 const GLOBE_RADIUS = 1;
 const PARTICLE_RADIUS = 1.004; // 地表より少し浮かせて Z ファイティングを避ける
 
+const SOURCE_NAMES: Record<string, string> = {
+  cache: 'GFS キャッシュ',
+  sample: 'GFS 同梱サンプル',
+  nomads: 'GFS NOMADS',
+};
+
+// 例: "GFS NOMADS / 2026-06-12 12:00 UTC (+6h)"
+function describeField(field: WindField, sourceName: string): string {
+  if (!field.refTime) return sourceName;
+  const fh = field.forecastTime ?? 0;
+  const valid = new Date(new Date(field.refTime).getTime() + fh * 3600_000);
+  const time = valid.toISOString().slice(0, 16).replace('T', ' ');
+  const fhLabel = fh > 0 ? ` (+${fh}h)` : '';
+  return `${sourceName} / ${time} UTC${fhLabel}`;
+}
+
 async function loadWindField(): Promise<{ field: WindField; label: string }> {
   try {
     const result = await window.windApi.getWindData();
     if (result) {
       const field = WindField.fromGfsJson(result.records);
       if (field) {
-        const sourceName = result.source === 'cache' ? 'キャッシュ' : '同梱サンプル';
-        const time = field.refTime
-          ? new Date(field.refTime).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
-          : '時刻不明';
-        return { field, label: `GFS ${sourceName} / ${time}` };
+        return { field, label: describeField(field, SOURCE_NAMES[result.source]) };
       }
     }
   } catch (err) {
@@ -81,6 +93,12 @@ function init(): void {
   const countValue = document.getElementById('count-value')!;
   const speedSlider = document.getElementById('speed') as HTMLInputElement;
   const speedValue = document.getElementById('speed-value')!;
+  const trailSlider = document.getElementById('trail') as HTMLInputElement;
+  const trailValue = document.getElementById('trail-value')!;
+  const fcstSlider = document.getElementById('fcst') as HTMLInputElement;
+  const fcstValue = document.getElementById('fcst-value')!;
+  const fetchBtn = document.getElementById('fetch-btn') as HTMLButtonElement;
+  const fetchStatus = document.getElementById('fetch-status')!;
   const dataSourceEl = document.getElementById('data-source')!;
   const fpsEl = document.getElementById('fps')!;
 
@@ -90,7 +108,12 @@ function init(): void {
       scene.remove(particles.object3d);
       particles.dispose();
     }
-    particles = new ParticleSystem(count, PARTICLE_RADIUS, windField);
+    particles = new ParticleSystem(
+      count,
+      PARTICLE_RADIUS,
+      windField,
+      Number(trailSlider.value),
+    );
     particles.speedFactor = Number(speedSlider.value);
     scene.add(particles.object3d);
   }
@@ -104,6 +127,34 @@ function init(): void {
   speedSlider.addEventListener('input', () => {
     speedValue.textContent = Number(speedSlider.value).toFixed(1);
     if (particles) particles.speedFactor = Number(speedSlider.value);
+  });
+  trailSlider.addEventListener('input', () => {
+    trailValue.textContent = trailSlider.value;
+  });
+  trailSlider.addEventListener('change', () => {
+    rebuildParticles(Number(countSlider.value));
+  });
+  fcstSlider.addEventListener('input', () => {
+    fcstValue.textContent = `+${fcstSlider.value}h`;
+  });
+  fetchBtn.addEventListener('click', async () => {
+    fetchBtn.disabled = true;
+    fetchStatus.textContent = '取得中…';
+    try {
+      const result = await window.windApi.fetchWind(Number(fcstSlider.value));
+      const field = WindField.fromGfsJson(result.records);
+      if (!field) throw new Error('データを解釈できませんでした');
+      windField = field;
+      dataSourceEl.textContent = `データ: ${describeField(field, SOURCE_NAMES.nomads)}`;
+      rebuildParticles(Number(countSlider.value));
+      fetchStatus.textContent = '取得完了';
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // IPC 経由のエラーは定型の前置きが付くので除去する
+      fetchStatus.textContent = `取得失敗: ${message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`;
+    } finally {
+      fetchBtn.disabled = false;
+    }
   });
 
   window.addEventListener('resize', () => {

@@ -1,11 +1,12 @@
 interface WindApiResult {
-  source: 'cache' | 'sample';
+  source: 'cache' | 'sample' | 'nomads';
   records: unknown;
 }
 
 interface Window {
   windApi: {
     getWindData(): Promise<WindApiResult | null>;
+    fetchWind(forecastHour: number): Promise<WindApiResult>;
   };
 }
 

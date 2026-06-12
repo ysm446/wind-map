@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { WindField } from './wind';
 import { lonLatToVector3 } from './globe';
 
-const TRAIL = 16; // 1 粒子あたりの軌跡点数
 const BASE_DEG_PER_FRAME = 0.03; // 風速 1 m/s あたりの 1 フレーム移動量(度)
 const MAX_LAT = 85; // 極近傍は移流が破綻するためリセットする
+const FADE_IN_FRAMES = 8; // 出現直後にフェードイン
+const FADE_OUT_FRAMES = 24; // 寿命の終わりにフェードアウト
 
 // 風速 (m/s) → 色のグラデーション
 const COLOR_STOPS: Array<[number, [number, number, number]]> = [
@@ -43,6 +44,7 @@ export class ParticleSystem {
 
   private readonly count: number;
   private readonly radius: number;
+  private readonly trailLen: number; // 1 粒子あたりの軌跡点数
   private wind: WindField;
   private readonly lons: Float32Array;
   private readonly lats: Float32Array;
@@ -54,9 +56,11 @@ export class ParticleSystem {
   private readonly colorAttr: THREE.BufferAttribute;
   private readonly tmpVec = new THREE.Vector3();
 
-  constructor(count: number, radius: number, wind: WindField) {
+  constructor(count: number, radius: number, wind: WindField, trailLen = 16) {
+    const TRAIL = Math.max(2, trailLen);
     this.count = count;
     this.radius = radius;
+    this.trailLen = TRAIL;
     this.wind = wind;
     this.lons = new Float32Array(count);
     this.lats = new Float32Array(count);
@@ -94,6 +98,7 @@ export class ParticleSystem {
   }
 
   private respawn(i: number): void {
+    const TRAIL = this.trailLen;
     // 球面上で一様になるよう sin(lat) を一様サンプリングする
     const lat = (Math.asin(Math.random() * 2 - 1) * 180) / Math.PI;
     const lon = Math.random() * 360 - 180;
@@ -112,6 +117,7 @@ export class ParticleSystem {
   }
 
   update(): void {
+    const TRAIL = this.trailLen;
     const positions = this.positionAttr.array as Float32Array;
     const colors = this.colorAttr.array as Float32Array;
 
@@ -144,7 +150,19 @@ export class ParticleSystem {
       }
 
       // 軌跡をラインセグメント列として書き出す(古いほど暗く)
-      const [r, g, b] = speedColor(this.speeds[i]);
+      // 出現・消滅が急に見えないよう、寿命の出入りで明るさを絞る
+      const life = Math.max(
+        0,
+        Math.min(
+          1,
+          this.ages[i] / FADE_IN_FRAMES,
+          (this.maxAges[i] - this.ages[i]) / FADE_OUT_FRAMES,
+        ),
+      );
+      let [r, g, b] = speedColor(this.speeds[i]);
+      r *= life;
+      g *= life;
+      b *= life;
       const trailBase = i * TRAIL * 3;
       for (let k = 0; k < TRAIL - 1; k++) {
         const seg = (i * (TRAIL - 1) + k) * 6;

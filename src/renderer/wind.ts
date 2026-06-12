@@ -17,6 +17,7 @@ interface GfsHeader {
   dx: number;
   dy: number;
   refTime?: string;
+  forecastTime?: number;
 }
 
 interface GfsRecord {
@@ -32,6 +33,7 @@ export class WindField {
   readonly dx: number;
   readonly dy: number;
   readonly refTime: string | null;
+  readonly forecastTime: number | null; // 基準時刻からの予報時間 (hour)
   private readonly uData: Float32Array;
   private readonly vData: Float32Array;
 
@@ -40,6 +42,7 @@ export class WindField {
     uData: Float32Array,
     vData: Float32Array,
     refTime: string | null = null,
+    forecastTime: number | null = null,
   ) {
     this.nx = header.nx;
     this.ny = header.ny;
@@ -48,6 +51,7 @@ export class WindField {
     this.dx = header.dx;
     this.dy = header.dy;
     this.refTime = refTime;
+    this.forecastTime = forecastTime;
     this.uData = uData;
     this.vData = vData;
   }
@@ -69,6 +73,7 @@ export class WindField {
       Float32Array.from(uRec.data),
       Float32Array.from(vRec.data),
       h.refTime ?? null,
+      h.forecastTime ?? null,
     );
   }
 

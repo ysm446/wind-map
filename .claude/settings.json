@@ -11,7 +11,13 @@
       "PowerShell($env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-shot.png\"; npx electron .; \"exit=$LASTEXITCODE\"; Test-Path $env:WINDMAP_SCREENSHOT)",
       "PowerShell(npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-shot2.png\"; npx electron . })",
       "PowerShell($env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-bat-test.png\"; cmd /c \"d:\\\\GitHub\\\\wind-map\\\\start.bat\"; \"exit=$LASTEXITCODE\"; Test-Path \"$env:TEMP\\\\windmap-bat-test.png\")",
-      "PowerShell(git add -A)"
+      "PowerShell(git add -A)",
+      "Bash(node -e ' *)",
+      "Bash(cp /tmp/gfs-test.grib2 ./gfs-test.grib2)",
+      "Bash(curl -s --max-time 60 -o ./gfs-test.grib2 \"https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_1p00.pl?file=gfs.t06z.pgrb2.1p00.f000&var_UGRD=on&var_VGRD=on&lev_10_m_above_ground=on&dir=%2Fgfs.20260612%2F06%2Fatmos\")",
+      "PowerShell(npm run test:nomads)",
+      "PowerShell(npm run test:nomads -- --write-cache)",
+      "PowerShell(npx tsc --noEmit; if \\($?\\) { npm run build; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p1.png\"; npx electron . } })"
     ]
   }
 }

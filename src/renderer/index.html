@@ -28,6 +28,22 @@
         </div>
         <input id="speed" type="range" min="0.2" max="3" step="0.1" value="1" />
       </div>
+      <div class="control">
+        <div class="control-label">
+          <span>軌跡の長さ</span>
+          <span class="value" id="trail-value">32</span>
+        </div>
+        <input id="trail" type="range" min="4" max="64" step="2" value="32" />
+      </div>
+      <div class="control">
+        <div class="control-label">
+          <span>予報時刻</span>
+          <span class="value" id="fcst-value">+0h</span>
+        </div>
+        <input id="fcst" type="range" min="0" max="120" step="3" value="0" />
+      </div>
+      <button id="fetch-btn">最新データを取得</button>
+      <div class="meta" id="fetch-status"></div>
       <div class="meta" id="fps"></div>
     </div>
     <script type="module" src="./main.ts"></script>
