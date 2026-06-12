@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createGlobe } from './globe';
+import { createGlobe, Coastlines } from './globe';
 import { WindField, makeSyntheticWind } from './wind';
 import { ParticleSystem } from './particles';
 import { GpuParticleSystem } from './gpu-particles';
@@ -40,7 +40,7 @@ async function loadWindField(): Promise<{ field: WindField; label: string }> {
   return { field: makeSyntheticWind(), label: '合成風場(フォールバック)' };
 }
 
-function init(): void {
+async function init(): Promise<void> {
   const container = document.getElementById('app')!;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -68,6 +68,10 @@ function init(): void {
   controls.rotateSpeed = 0.5;
 
   scene.add(createGlobe(GLOBE_RADIUS));
+
+  // ベクター海岸線 (LOD 付き)。地表より少し浮かせて Z ファイティングを避ける
+  const coastlines = new Coastlines(GLOBE_RADIUS * 1.0015);
+  scene.add(coastlines.group);
 
   // 薄い星空
   {
@@ -104,6 +108,46 @@ function init(): void {
   const fetchStatus = document.getElementById('fetch-status')!;
   const dataSourceEl = document.getElementById('data-source')!;
   const fpsEl = document.getElementById('fps')!;
+
+  // 保存済みの UI 設定 (data/settings.json) を起動時に反映する
+  function applySettings(s: AppSettings | null): void {
+    if (!s) return;
+    if (
+      s.particleTexSize &&
+      Array.from(countSelect.options).some((o) => Number(o.value) === s.particleTexSize)
+    ) {
+      countSelect.value = String(s.particleTexSize);
+    }
+    if (typeof s.speed === 'number' && Number.isFinite(s.speed)) {
+      speedSlider.value = String(Math.min(3, Math.max(0.1, s.speed)));
+      speedValue.textContent = Number(speedSlider.value).toFixed(1);
+    }
+    if (typeof s.trail === 'number' && Number.isFinite(s.trail)) {
+      trailSlider.value = String(Math.min(64, Math.max(4, Math.round(s.trail))));
+      trailValue.textContent = trailSlider.value;
+    }
+    if (typeof s.forecastHour === 'number' && Number.isFinite(s.forecastHour)) {
+      fcstSlider.value = String(Math.min(120, Math.max(0, Math.round(s.forecastHour / 3) * 3)));
+      fcstValue.textContent = `+${fcstSlider.value}h`;
+    }
+  }
+
+  let saveTimer: number | undefined;
+  function scheduleSave(): void {
+    window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      window.windApi
+        .saveSettings({
+          particleTexSize: Number(countSelect.value),
+          speed: Number(speedSlider.value),
+          trail: Number(trailSlider.value),
+          forecastHour: Number(fcstSlider.value),
+        })
+        .catch((err) => console.error('settings save failed', err));
+    }, 500);
+  }
+
+  applySettings(await window.windApi.getSettings().catch(() => null));
 
   // 軌跡スライダー値 (4〜64) を蓄積バッファの減衰率に変換する
   function trailFadeFromSlider(): number {
@@ -160,21 +204,25 @@ function init(): void {
 
   countSelect.addEventListener('change', () => {
     rebuildParticles();
+    scheduleSave();
   });
   speedSlider.addEventListener('input', () => {
     speedValue.textContent = Number(speedSlider.value).toFixed(1);
     if (gpuParticles) gpuParticles.speedFactor = Number(speedSlider.value);
     if (cpuParticles) cpuParticles.speedFactor = Number(speedSlider.value);
+    scheduleSave();
   });
   trailSlider.addEventListener('input', () => {
     trailValue.textContent = trailSlider.value;
     if (gpuParticles) gpuParticles.trailFade = trailFadeFromSlider();
+    scheduleSave();
   });
   trailSlider.addEventListener('change', () => {
     if (cpuParticles) rebuildParticles();
   });
   fcstSlider.addEventListener('input', () => {
     fcstValue.textContent = `+${fcstSlider.value}h`;
+    scheduleSave();
   });
   const histTime = document.getElementById('hist-time') as HTMLInputElement;
   const histBtn = document.getElementById('hist-btn') as HTMLButtonElement;
@@ -238,6 +286,7 @@ function init(): void {
 
   renderer.setAnimationLoop(() => {
     controls.update();
+    coastlines.update(controls.getDistance());
     if (gpuParticles) gpuParticles.update(camera);
     if (cpuParticles) cpuParticles.update();
     renderer.render(scene, camera);
@@ -253,4 +302,4 @@ function init(): void {
   });
 }
 
-init();
+void init();

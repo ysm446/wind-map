@@ -209,6 +209,7 @@ export class GpuParticleSystem {
   private trailRead: THREE.WebGLRenderTarget;
   private trailWrite: THREE.WebGLRenderTarget;
   private prevCamMatrix = new THREE.Matrix4();
+  private currentFade = MOVING_FADE; // 起動直後は控えめから滑らかに立ち上げる
 
   static isSupported(renderer: THREE.WebGLRenderer): boolean {
     return renderer.capabilities.isWebGL2 && renderer.extensions.has('EXT_color_buffer_float');
@@ -414,12 +415,27 @@ export class GpuParticleSystem {
     }
 
     // 2) 軌跡の蓄積: 前フレームを減衰コピー → 地球の深度 → 粒子を点描
+    // カメラ移動判定は完全一致ではなく許容誤差付きで行う。
+    // ダンピングによるサブピクセルの動きを「移動中」と誤判定すると、
+    // 静止した瞬間に減衰率が急変して明度が跳ねるため
     camera.updateMatrixWorld();
-    const moving = !this.prevCamMatrix.equals(camera.matrixWorld);
+    const e1 = this.prevCamMatrix.elements;
+    const e2 = camera.matrixWorld.elements;
+    let moving = false;
+    for (let i = 0; i < 16; i++) {
+      if (Math.abs(e1[i] - e2[i]) > 1e-4) {
+        moving = true;
+        break;
+      }
+    }
     this.prevCamMatrix.copy(camera.matrixWorld);
-    this.fadeMat.uniforms.uFade.value = moving
-      ? Math.min(this.trailFade, MOVING_FADE)
-      : this.trailFade;
+    const targetFade = moving ? Math.min(this.trailFade, MOVING_FADE) : this.trailFade;
+    // 動き始めは即座に強い減衰へ、停止後は緩やかに戻して明度の急変を防ぐ
+    this.currentFade =
+      targetFade < this.currentFade
+        ? targetFade
+        : this.currentFade + (targetFade - this.currentFade) * 0.02;
+    this.fadeMat.uniforms.uFade.value = this.currentFade;
     this.fadeMat.uniforms.uPrev.value = this.trailRead.texture;
 
     renderer.setRenderTarget(this.trailWrite);

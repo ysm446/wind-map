@@ -25,7 +25,8 @@
       "PowerShell(npx tsc --noEmit; if \\($?\\) { npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p3.png\"; npx electron . } })",
       "PowerShell($env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p3b.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-p3b.png\" -ErrorAction SilentlyContinue\\).Length)",
       "PowerShell(npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p3c.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-p3c.png\" -ErrorAction SilentlyContinue\\).Length })",
-      "PowerShell(npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-fix-white.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-fix-white.png\" -ErrorAction SilentlyContinue\\).Length })"
+      "PowerShell(npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-fix-white.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-fix-white.png\" -ErrorAction SilentlyContinue\\).Length })",
+      "PowerShell($env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-coast2.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-coast2.png\" -ErrorAction SilentlyContinue\\).Length)"
     ]
   }
 }

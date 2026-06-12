@@ -52,6 +52,25 @@ ipcMain.handle('wind:fetch-archive', async (_event, opts: { time?: string } | un
   return { source: 'archive', records: result.records };
 });
 
+// UI 設定はアプリ直下の data/settings.json に保存する (ポータブル運用を想定)
+function settingsPath(): string {
+  return path.join(app.getAppPath(), 'data', 'settings.json');
+}
+
+ipcMain.handle('settings:get', async () => {
+  try {
+    return JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
+  } catch {
+    return null; // 初回起動などファイルが無い場合
+  }
+});
+
+ipcMain.handle('settings:set', async (_event, settings: unknown) => {
+  const file = settingsPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(settings, null, 2));
+});
+
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
