@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fetchGfsWind } from './nomads';
@@ -73,8 +73,9 @@ ipcMain.handle('settings:set', async (_event, settings: unknown) => {
 
 function createWindow(): void {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 1600,
+    height: 900,
+    useContentSize: true,
     backgroundColor: '#0a0e14',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -111,6 +112,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
