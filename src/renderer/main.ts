@@ -142,6 +142,8 @@ async function init(): Promise<void> {
   const fetchStatus = document.getElementById('fetch-status')!;
   const dataSourceEl = document.getElementById('data-source')!;
   const fpsEl = document.getElementById('fps')!;
+  const dateDisplayDate = document.getElementById('date-display-date')!;
+  const dateDisplayTime = document.getElementById('date-display-time')!;
   const schemeSelect = document.getElementById('scheme') as HTMLSelectElement;
   const colorsResetBtn = document.getElementById('colors-reset') as HTMLButtonElement;
 
@@ -364,9 +366,25 @@ async function init(): Promise<void> {
     }
   }
 
+  // 右下の大きな日付表示。合成風場など有効日時のないデータでは消す
+  function updateDateDisplay(field: WindField): void {
+    if (!field.refTime) {
+      dateDisplayDate.textContent = '';
+      dateDisplayTime.textContent = '';
+      return;
+    }
+    const valid = new Date(
+      new Date(field.refTime).getTime() + (field.forecastTime ?? 0) * 3600_000,
+    );
+    const iso = valid.toISOString();
+    dateDisplayDate.textContent = iso.slice(0, 10);
+    dateDisplayTime.textContent = `${iso.slice(11, 16)} UTC`;
+  }
+
   // 新しい風場の適用。粒子と軌跡は保ったまま風だけ差し替える
   function applyWind(field: WindField): void {
     windField = field;
+    updateDateDisplay(field);
     overlay.setWind(field);
     if (gpuParticles) gpuParticles.setWind(field);
     else if (cpuParticles) cpuParticles.setWind(field);

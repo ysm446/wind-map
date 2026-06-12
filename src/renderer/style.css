@@ -4,6 +4,11 @@
   box-sizing: border-box;
 }
 
+html {
+  /* select のドロップダウン等、ネイティブ UI 部品をダーク表示にする */
+  color-scheme: dark;
+}
+
 html,
 body {
   width: 100%;
@@ -127,6 +132,12 @@ select {
 select:focus-visible {
   outline: 1px solid rgba(159, 180, 212, 0.6);
   outline-offset: 1px;
+}
+
+/* ドロップダウンの選択肢。color-scheme が効かない環境向けの保険 */
+select option {
+  background-color: #131a26;
+  color: #cdd6e4;
 }
 
 input[type="datetime-local"] {
@@ -253,4 +264,31 @@ input[type="color"] {
 
 #fps {
   margin-bottom: 0;
+}
+
+/* 右下の大きな日付表示(風データの有効日時)。
+   Bahnschrift は Windows 標準の DIN 系バリアブルフォント */
+#date-display {
+  position: fixed;
+  right: 56px;
+  bottom: 44px;
+  text-align: right;
+  pointer-events: none;
+  user-select: none;
+  font-family: Bahnschrift, "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+}
+
+#date-display-date {
+  font-size: 64px;
+  font-weight: 300;
+  letter-spacing: 0.06em;
+  line-height: 1.05;
+  color: rgba(205, 214, 228, 0.85);
+}
+
+#date-display-time {
+  font-size: 24px;
+  font-weight: 300;
+  letter-spacing: 0.14em;
+  color: rgba(159, 180, 212, 0.7);
 }

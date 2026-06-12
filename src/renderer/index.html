@@ -2,6 +2,7 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
+    <meta name="color-scheme" content="dark" />
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"
@@ -11,6 +12,10 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="date-display">
+      <div id="date-display-date"></div>
+      <div id="date-display-time"></div>
+    </div>
     <div id="panel">
       <h1>Wind Map</h1>
       <div class="meta" id="data-source">データ読み込み中…</div>
