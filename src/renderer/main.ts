@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createGlobe, Coastlines } from './globe';
+import { createGlobe, createCoastlines, createBorders } from './globe';
 import { WindField, makeSyntheticWind } from './wind';
 import { ParticleSystem } from './particles';
 import { GpuParticleSystem } from './gpu-particles';
@@ -69,9 +69,11 @@ async function init(): Promise<void> {
 
   scene.add(createGlobe(GLOBE_RADIUS));
 
-  // ベクター海岸線 (LOD 付き)。地表より少し浮かせて Z ファイティングを避ける
-  const coastlines = new Coastlines(GLOBE_RADIUS * 1.0015);
+  // ベクター海岸線・国境線 (LOD 付き)。地表より少し浮かせて Z ファイティングを避ける
+  const coastlines = createCoastlines(GLOBE_RADIUS * 1.0015);
+  const borders = createBorders(GLOBE_RADIUS * 1.0014);
   scene.add(coastlines.group);
+  scene.add(borders.group);
 
   // 薄い星空
   {
@@ -281,12 +283,21 @@ async function init(): Promise<void> {
     rebuildParticles();
   });
 
+  // 動作検証用 (WINDMAP_SCREENSHOT) にカメラ状態を覗けるようにしておく
+  (window as unknown as Record<string, unknown>).__windmapDebug = () => ({
+    w: window.innerWidth,
+    h: window.innerHeight,
+    dpr: window.devicePixelRatio,
+    dist: controls.getDistance(),
+  });
+
   let frames = 0;
   let lastFpsTime = performance.now();
 
   renderer.setAnimationLoop(() => {
     controls.update();
     coastlines.update(controls.getDistance());
+    borders.update(controls.getDistance());
     if (gpuParticles) gpuParticles.update(camera);
     if (cpuParticles) cpuParticles.update();
     renderer.render(scene, camera);

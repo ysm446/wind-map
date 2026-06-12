@@ -93,6 +93,13 @@ function createWindow(): void {
         try {
           const image = await win.webContents.capturePage();
           fs.writeFileSync(screenshotPath, image.toPNG());
+          const debug = await win.webContents
+            .executeJavaScript('typeof __windmapDebug === "function" ? __windmapDebug() : null')
+            .catch(() => null);
+          fs.writeFileSync(
+            `${screenshotPath}.txt`,
+            JSON.stringify({ bounds: win.getBounds(), debug }),
+          );
         } catch (err) {
           console.error('screenshot failed', err);
         } finally {

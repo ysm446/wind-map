@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import landGeo from './data/land-50m.json';
 import coast110 from './data/coastline-110m.json';
 import coast50 from './data/coastline-50m.json';
+import border110 from './data/border-110m.json';
+import border50 from './data/border-50m.json';
 
 // SphereGeometry の UV 配置に合わせた経緯度 → 3D 座標変換。
 // テクスチャ左端 (u=0) が lon=-180 に対応する。
@@ -146,46 +148,66 @@ function buildCoastGeometry(geo: unknown, radius: number): THREE.BufferGeometry 
   return geom;
 }
 
-// ベクター海岸線。カメラ距離に応じて 110m / 50m / 10m を切り替える LOD 付き。
-// テクスチャと違い解像度非依存なので、ズームしても輪郭が常にシャープに保たれる。
-export class Coastlines {
+interface LodLinesOptions {
+  radius: number;
+  color: number;
+  opacity: number;
+  geo110: unknown;
+  geo50: unknown;
+  load10: () => Promise<{ default: unknown }>;
+}
+
+// ベクターライン (海岸線・国境線など)。カメラ距離に応じて 110m / 50m / 10m を
+// 切り替える LOD 付き。テクスチャと違い解像度非依存なので、ズームしても
+// 輪郭が常にシャープに保たれる。
+export class LodLines {
   readonly group = new THREE.Group();
   private readonly material: THREE.LineBasicMaterial;
-  private readonly radius: number;
+  private readonly opts: LodLinesOptions;
   private readonly lod110: THREE.LineSegments;
   private readonly lod50: THREE.LineSegments;
   private lod10: THREE.LineSegments | null = null;
   private lod10Requested = false;
 
-  constructor(radius: number) {
-    this.radius = radius;
+  constructor(opts: LodLinesOptions) {
+    this.opts = opts;
+    // 加算合成で発光風にし、粒子のグローと馴染ませる
     this.material = new THREE.LineBasicMaterial({
-      color: 0x9db4d6,
+      color: opts.color,
       transparent: true,
-      opacity: 0.5,
+      opacity: opts.opacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
-    this.lod110 = new THREE.LineSegments(buildCoastGeometry(coast110, radius), this.material);
-    this.lod50 = new THREE.LineSegments(buildCoastGeometry(coast50, radius), this.material);
+    this.lod110 = new THREE.LineSegments(
+      buildCoastGeometry(opts.geo110, opts.radius),
+      this.material,
+    );
+    this.lod50 = new THREE.LineSegments(
+      buildCoastGeometry(opts.geo50, opts.radius),
+      this.material,
+    );
     this.lod50.visible = false;
     this.group.add(this.lod110, this.lod50);
   }
 
-  // 毎フレーム呼ぶ。10m (約19MB) は初回要求時に動的 import で遅延ロードする
+  // 毎フレーム呼ぶ。10m は初回要求時に動的 import で遅延ロードする
   update(cameraDistance: number): void {
     const want = cameraDistance > 4.5 ? 110 : cameraDistance > 2.5 ? 50 : 10;
 
     if (want === 10 && !this.lod10Requested) {
       this.lod10Requested = true;
-      import('./data/coastline-10m.json')
+      this.opts
+        .load10()
         .then((mod) => {
           this.lod10 = new THREE.LineSegments(
-            buildCoastGeometry(mod.default, this.radius),
+            buildCoastGeometry(mod.default, this.opts.radius),
             this.material,
           );
           this.lod10.visible = false;
           this.group.add(this.lod10);
         })
-        .catch((err) => console.error('coastline 10m load failed', err));
+        .catch((err) => console.error('10m line data load failed', err));
     }
 
     const active =
@@ -198,6 +220,28 @@ export class Coastlines {
       if (obj) obj.visible = obj === active;
     }
   }
+}
+
+export function createCoastlines(radius: number): LodLines {
+  return new LodLines({
+    radius,
+    color: 0x9db4d6,
+    opacity: 0.5,
+    geo110: coast110,
+    geo50: coast50,
+    load10: () => import('./data/coastline-10m.json'),
+  });
+}
+
+export function createBorders(radius: number): LodLines {
+  return new LodLines({
+    radius,
+    color: 0x8593a8,
+    opacity: 0.3, // 海岸線より控えめにする
+    geo110: border110,
+    geo50: border50,
+    load10: () => import('./data/border-10m.json'),
+  });
 }
 
 export function createGlobe(radius: number): THREE.Group {

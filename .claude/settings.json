@@ -26,7 +26,12 @@
       "PowerShell($env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p3b.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-p3b.png\" -ErrorAction SilentlyContinue\\).Length)",
       "PowerShell(npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-p3c.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-p3c.png\" -ErrorAction SilentlyContinue\\).Length })",
       "PowerShell(npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-fix-white.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-fix-white.png\" -ErrorAction SilentlyContinue\\).Length })",
-      "PowerShell($env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-coast2.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-coast2.png\" -ErrorAction SilentlyContinue\\).Length)"
+      "PowerShell($env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-coast2.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-coast2.png\" -ErrorAction SilentlyContinue\\).Length)",
+      "Bash(curl -sL --fail -o border-110m.json __TRACKED_VAR__/110m/cultural/ne_110m_admin_0_boundary_lines_land.json)",
+      "Bash(curl -sL --fail -o border-50m.json __TRACKED_VAR__/50m/cultural/ne_50m_admin_0_boundary_lines_land.json)",
+      "Bash(curl -sL --fail -o border-10m.json __TRACKED_VAR__/10m/cultural/ne_10m_admin_0_boundary_lines_land.json)",
+      "PowerShell($env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-borders2.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-borders2.png\" -ErrorAction SilentlyContinue\\).Length)",
+      "PowerShell(npm run build; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-dbg.png\"; npx electron .; Get-Content \"$env:TEMP\\\\windmap-dbg.png.txt\" })"
     ]
   }
 }
