@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(npm install)",
+      "PowerShell(npm install -D @types/node @types/three)",
+      "Bash(curl -sL --fail -o assets/data/current-wind.json \"https://raw.githubusercontent.com/cambecc/earth/master/public/data/weather/current/current-wind-surface-level-gfs-1.0.json\")",
+      "Bash(curl -sL --fail -o src/renderer/data/land-110m.json \"https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/110m/physical/ne_110m_land.json\")",
+      "PowerShell(npm run build:main; if \\($?\\) { $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-shot.png\"; npx electron . })",
+      "PowerShell($env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-shot.png\"; npx electron .; \"exit=$LASTEXITCODE\"; Test-Path $env:WINDMAP_SCREENSHOT)",
+      "PowerShell(npm run build:renderer; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-shot2.png\"; npx electron . })",
+      "PowerShell($env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-bat-test.png\"; cmd /c \"d:\\\\GitHub\\\\wind-map\\\\start.bat\"; \"exit=$LASTEXITCODE\"; Test-Path \"$env:TEMP\\\\windmap-bat-test.png\")",
+      "PowerShell(git add -A)"
+    ]
+  }
+}

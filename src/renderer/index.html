@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"
+    />
+    <title>Wind Map</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="panel">
+      <h1>Wind Map</h1>
+      <div class="meta" id="data-source">データ読み込み中…</div>
+      <div class="control">
+        <div class="control-label">
+          <span>粒子数</span>
+          <span class="value" id="count-value">6000</span>
+        </div>
+        <input id="count" type="range" min="1000" max="12000" step="500" value="6000" />
+      </div>
+      <div class="control">
+        <div class="control-label">
+          <span>速度</span>
+          <span class="value" id="speed-value">1.0</span>
+        </div>
+        <input id="speed" type="range" min="0.2" max="3" step="0.1" value="1" />
+      </div>
+      <div class="meta" id="fps"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
