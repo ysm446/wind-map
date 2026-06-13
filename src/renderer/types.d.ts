@@ -25,6 +25,7 @@ interface AppSettings {
   overlay?: boolean; // 風速カラーオーバーレイの表示
   overlayOpacity?: number;
   particleScheme?: string; // COLOR_SCHEMES のキー (standard / viridis / turbo)
+  tz?: number; // 時刻表示のタイムゾーンオフセット (時間, UTC からのずれ)
   colors?: ColorSettings;
 }
 

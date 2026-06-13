@@ -78,6 +78,13 @@
         <summary>表示設定</summary>
         <div class="control">
           <div class="control-label">
+            <span>時刻のタイムゾーン</span>
+            <span class="value" id="tz-value">UTC+9</span>
+          </div>
+          <input id="tz" type="range" min="-12" max="14" step="1" value="9" />
+        </div>
+        <div class="control">
+          <div class="control-label">
             <span>パーティクル配色</span>
           </div>
           <select id="scheme">
@@ -135,7 +142,7 @@
         <button id="fetch-btn">最新データを取得</button>
         <div class="control">
           <div class="control-label">
-            <span>過去日時 (UTC)</span>
+            <span id="hist-time-label">過去日時 (UTC+9)</span>
           </div>
           <input id="hist-time" type="datetime-local" min="2021-01-01T00:00" step="10800" />
         </div>
@@ -165,11 +172,11 @@
         </div>
         <div id="db-archive-fields">
           <div class="control">
-            <div class="control-label"><span>開始 (UTC)</span></div>
+            <div class="control-label"><span id="db-start-label">開始 (UTC+9)</span></div>
             <input id="db-start" type="datetime-local" min="2021-01-01T00:00" step="10800" />
           </div>
           <div class="control">
-            <div class="control-label"><span>終了 (UTC)</span></div>
+            <div class="control-label"><span id="db-end-label">終了 (UTC+9)</span></div>
             <input id="db-end" type="datetime-local" min="2021-01-01T00:00" step="10800" />
           </div>
         </div>

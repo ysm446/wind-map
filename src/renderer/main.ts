@@ -31,29 +31,54 @@ const SOURCE_NAMES: Record<string, string> = {
   archive: 'GFS アーカイブ',
 };
 
-// 例: "GFS NOMADS / 2026-06-12 12:00 UTC (+6h)"
+// 時刻表示のタイムゾーンオフセット(時間)。設定で変更でき、UTC からのずれを表す。
+let displayTz = 9; // 既定は日本時間 (UTC+9)
+
+// "UTC" / "UTC+9" / "UTC-5" のようなラベル
+function tzLabel(): string {
+  if (displayTz === 0) return 'UTC';
+  const sign = displayTz > 0 ? '+' : '-';
+  return `UTC${sign}${Math.abs(displayTz)}`;
+}
+
+// UTC の ms を、選択中タイムゾーンの壁時計時刻に直した ISO 文字列(末尾 Z は名目)
+function isoInTz(ms: number): string {
+  return new Date(ms + displayTz * 3600_000).toISOString();
+}
+
+// datetime-local の入力値(選択中タイムゾーンの壁時計時刻)を UTC の ISO へ変換する
+function tzInputToUtcIso(value: string): string {
+  return new Date(Date.parse(`${value}:00Z`) - displayTz * 3600_000).toISOString();
+}
+
+// UTC の ms を datetime-local 入力用(選択中タイムゾーンの壁時計、"YYYY-MM-DDTHH:MM")へ
+function tzInputValue(ms: number): string {
+  return isoInTz(ms).slice(0, 16);
+}
+
+// 例: "GFS NOMADS / 2026-06-12 12:00 UTC+9 (+6h)"
 function describeField(field: WindField, sourceName: string): string {
   if (!field.refTime) return sourceName;
   const fh = field.forecastTime ?? 0;
-  const valid = new Date(new Date(field.refTime).getTime() + fh * 3600_000);
-  const time = valid.toISOString().slice(0, 16).replace('T', ' ');
+  const validMs = new Date(field.refTime).getTime() + fh * 3600_000;
+  const time = isoInTz(validMs).slice(0, 16).replace('T', ' ');
   const fhLabel = fh > 0 ? ` (+${fh}h)` : '';
-  return `${sourceName} / ${time} UTC${fhLabel}`;
+  return `${sourceName} / ${time} ${tzLabel()}${fhLabel}`;
 }
 
-async function loadWindField(): Promise<{ field: WindField; label: string }> {
+async function loadWindField(): Promise<{ field: WindField; sourceName: string | null }> {
   try {
     const result = await window.windApi.getWindData();
     if (result) {
       const field = WindField.fromGfsJson(result.records);
       if (field) {
-        return { field, label: describeField(field, SOURCE_NAMES[result.source]) };
+        return { field, sourceName: SOURCE_NAMES[result.source] };
       }
     }
   } catch (err) {
     console.error('wind data load failed', err);
   }
-  return { field: makeSyntheticWind(), label: '合成風場(フォールバック)' };
+  return { field: makeSyntheticWind(), sourceName: null };
 }
 
 async function init(): Promise<void> {
@@ -146,6 +171,8 @@ async function init(): Promise<void> {
   const dateDisplayTime = document.getElementById('date-display-time')!;
   const schemeSelect = document.getElementById('scheme') as HTMLSelectElement;
   const colorsResetBtn = document.getElementById('colors-reset') as HTMLButtonElement;
+  const tzSlider = document.getElementById('tz') as HTMLInputElement;
+  const tzValue = document.getElementById('tz-value')!;
 
   // 色設定の input 要素。キーは ColorSettings / DEFAULT_COLORS と対応する
   const colorEl = (id: string) => document.getElementById(id) as HTMLInputElement;
@@ -194,6 +221,10 @@ async function init(): Promise<void> {
     if (typeof s.particleScheme === 'string' && s.particleScheme in COLOR_SCHEMES) {
       schemeSelect.value = s.particleScheme;
     }
+    if (typeof s.tz === 'number' && Number.isFinite(s.tz)) {
+      displayTz = Math.min(14, Math.max(-12, Math.round(s.tz)));
+      tzSlider.value = String(displayTz);
+    }
     if (s.colors) {
       const hex = /^#[0-9a-fA-F]{6}$/;
       for (const key of Object.keys(colorInputs) as Array<keyof typeof colorInputs>) {
@@ -223,6 +254,7 @@ async function init(): Promise<void> {
           overlay: overlayCheck.checked,
           overlayOpacity: Number(overlayOpacity.value),
           particleScheme: schemeSelect.value,
+          tz: displayTz,
           colors: {
             coastline: colorInputs.coastline.value,
             coastlineOpacity: Number(coastOpInput.value),
@@ -366,10 +398,11 @@ async function init(): Promise<void> {
     }
   }
 
-  // 右下の大きな日付表示
-  function setDateDisplayIso(iso: string): void {
+  // 右下の大きな日付表示(選択中タイムゾーン)
+  function setDateDisplayMs(ms: number): void {
+    const iso = isoInTz(ms);
     dateDisplayDate.textContent = iso.slice(0, 10);
-    dateDisplayTime.textContent = `${iso.slice(11, 16)} UTC`;
+    dateDisplayTime.textContent = `${iso.slice(11, 16)} ${tzLabel()}`;
   }
 
   // フィールドの有効日時を表示する。合成風場など有効日時のないデータでは消す
@@ -379,10 +412,7 @@ async function init(): Promise<void> {
       dateDisplayTime.textContent = '';
       return;
     }
-    const valid = new Date(
-      new Date(field.refTime).getTime() + (field.forecastTime ?? 0) * 3600_000,
-    );
-    setDateDisplayIso(valid.toISOString());
+    setDateDisplayMs(fieldValidMs(field));
   }
 
   // フィールドの有効日時 (ms)。補間時刻の算出に使う
@@ -445,12 +475,25 @@ async function init(): Promise<void> {
   const histTime = document.getElementById('hist-time') as HTMLInputElement;
   const histBtn = document.getElementById('hist-btn') as HTMLButtonElement;
 
-  // 既定値: 1 年前の 00:00 UTC。上限は現在時刻
+  // 既定値: 1 年前の 0 時(選択中タイムゾーンで表示)。上限は現在時刻
   {
     const now = new Date();
-    const past = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate()));
-    histTime.value = past.toISOString().slice(0, 16);
-    histTime.max = now.toISOString().slice(0, 16);
+    const pastMs = Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate());
+    histTime.value = tzInputValue(pastMs);
+  }
+
+  // 現在表示中のデータ情報。タイムゾーン変更時にラベルを作り直すため保持する
+  let curField: WindField | null = null;
+  let curSourceName: string | null = null;
+  let curCollectionText: string | null = null;
+  function refreshSourceLabel(): void {
+    if (curCollectionText !== null) {
+      dataSourceEl.textContent = curCollectionText;
+    } else if (curField && curField.refTime && curSourceName) {
+      dataSourceEl.textContent = `データ: ${describeField(curField, curSourceName)}`;
+    } else if (curField) {
+      dataSourceEl.textContent = 'データ: 合成風場(フォールバック)';
+    }
   }
 
   async function runFetch(fetcher: () => Promise<WindApiResult>): Promise<void> {
@@ -462,7 +505,10 @@ async function init(): Promise<void> {
       const field = WindField.fromGfsJson(result.records);
       if (!field) throw new Error('データを解釈できませんでした');
       applyWind(field);
-      dataSourceEl.textContent = `データ: ${describeField(field, SOURCE_NAMES[result.source])}`;
+      curField = field;
+      curSourceName = SOURCE_NAMES[result.source];
+      curCollectionText = null;
+      refreshSourceLabel();
       fetchStatus.textContent = '取得完了';
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -482,8 +528,8 @@ async function init(): Promise<void> {
       fetchStatus.textContent = '日時を入力してください';
       return;
     }
-    // datetime-local はタイムゾーンを持たないため UTC として解釈する
-    void runFetch(() => window.windApi.fetchArchiveWind(`${histTime.value}:00Z`));
+    // datetime-local の値は選択中タイムゾーンの壁時計時刻として解釈し UTC に直す
+    void runFetch(() => window.windApi.fetchArchiveWind(tzInputToUtcIso(histTime.value)));
   });
 
   // --- 風データDB / アニメーション ---
@@ -537,7 +583,7 @@ async function init(): Promise<void> {
   const SOURCE_LABEL = { forecast: '予報', archive: 'アーカイブ' };
 
   function shortTime(iso: string | null): string {
-    return iso ? iso.slice(0, 16).replace('T', ' ') : '—';
+    return iso ? isoInTz(new Date(iso).getTime()).slice(0, 16).replace('T', ' ') : '—';
   }
 
   function renderDbList(items: CollectionSummary[]): void {
@@ -608,7 +654,7 @@ async function init(): Promise<void> {
       overlay.setWindInterp(a, b, frac);
       windField = a; // 粒子再構築時の基準(次フレームで補間が上書きする)
       const tms = player.times[i0] + (player.times[i0 + 1] - player.times[i0]) * frac;
-      setDateDisplayIso(new Date(tms).toISOString());
+      setDateDisplayMs(tms);
       player.appliedIndex = -1; // 離散へ戻ったとき必ず再適用させる
     } else {
       const i = Math.round(pos);
@@ -672,7 +718,8 @@ async function init(): Promise<void> {
     dbInValue.textContent = '0';
     dbOutValue.textContent = max;
     dbPlay.textContent = '▶ 再生';
-    dataSourceEl.textContent = `データ: ${meta.name}(保存) / ${frames.length}コマ`;
+    curCollectionText = `データ: ${meta.name}(保存) / ${frames.length}コマ`;
+    refreshSourceLabel();
     setFrame(0);
     void refreshDbList();
   }
@@ -707,15 +754,12 @@ async function init(): Promise<void> {
   syncDbSource();
   dbSource.addEventListener('change', syncDbSource);
 
-  // アーカイブ日時の既定値: 1 年前の 00:00 UTC から 24 時間
+  // アーカイブ日時の既定値: 1 年前の 0 時から 24 時間(選択中タイムゾーンで表示)
   {
     const now = new Date();
-    const s = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate()));
-    const e = new Date(s.getTime() + 24 * 3600_000);
-    dbStart.value = s.toISOString().slice(0, 16);
-    dbEnd.value = e.toISOString().slice(0, 16);
-    dbStart.max = now.toISOString().slice(0, 16);
-    dbEnd.max = now.toISOString().slice(0, 16);
+    const startMs = Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate());
+    dbStart.value = tzInputValue(startMs);
+    dbEnd.value = tzInputValue(startMs + 24 * 3600_000);
   }
 
   dbFcstStart.addEventListener('input', () => {
@@ -758,8 +802,8 @@ async function init(): Promise<void> {
       opts = {
         kind: 'archive',
         name,
-        start: `${dbStart.value}:00Z`,
-        end: `${dbEnd.value}:00Z`,
+        start: tzInputToUtcIso(dbStart.value),
+        end: tzInputToUtcIso(dbEnd.value),
         stepHours: Number(dbStep.value),
       };
     }
@@ -817,7 +861,35 @@ async function init(): Promise<void> {
     dbOutValue.textContent = dbOut.value;
   });
 
-  void refreshDbList();
+  // タイムゾーン: ラベル・入力欄の範囲・表示中の時刻をまとめて更新する
+  const histTimeLabel = document.getElementById('hist-time-label')!;
+  const dbStartLabel = document.getElementById('db-start-label')!;
+  const dbEndLabel = document.getElementById('db-end-label')!;
+  function syncTz(): void {
+    const label = tzLabel();
+    tzValue.textContent = label;
+    histTimeLabel.textContent = `過去日時 (${label})`;
+    dbStartLabel.textContent = `開始 (${label})`;
+    dbEndLabel.textContent = `終了 (${label})`;
+    // アーカイブ下限 (2021-01-01 UTC) と現在を、選択中タイムゾーンの壁時計へ直す
+    const minVal = tzInputValue(Date.UTC(2021, 0, 1));
+    const maxVal = tzInputValue(Date.now());
+    for (const el of [histTime, dbStart, dbEnd]) {
+      el.min = minVal;
+      el.max = maxVal;
+    }
+    // 表示中の時刻・ラベルを再描画する
+    if (player.frames.length) applyAtPos();
+    else if (windField) updateDateDisplay(windField);
+    refreshSourceLabel();
+    void refreshDbList();
+  }
+  syncTz();
+  tzSlider.addEventListener('input', () => {
+    displayTz = Number(tzSlider.value);
+    syncTz();
+    scheduleSave();
+  });
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -826,8 +898,11 @@ async function init(): Promise<void> {
     gpuParticles?.resize();
   });
 
-  loadWindField().then(({ field, label }) => {
-    dataSourceEl.textContent = `データ: ${label}`;
+  loadWindField().then(({ field, sourceName }) => {
+    curField = field;
+    curSourceName = sourceName;
+    curCollectionText = null;
+    refreshSourceLabel();
     applyWind(field);
   });
 
