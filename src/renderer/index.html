@@ -22,12 +22,12 @@
     <div id="fps"></div>
     <div id="panel">
       <h1>Wind Map</h1>
-      <div class="meta" id="data-source">データ読み込み中…</div>
+      <div class="meta" id="data-source" data-i18n="dataLoading">データ読み込み中…</div>
       <details class="section">
-        <summary>パーティクル</summary>
+        <summary data-i18n="secParticles">パーティクル</summary>
         <div class="control">
           <div class="control-label">
-            <span>粒子数</span>
+            <span data-i18n="particleCount">粒子数</span>
           </div>
           <select id="count">
             <option value="128">16,384</option>
@@ -38,37 +38,37 @@
         </div>
         <div class="control">
           <div class="control-label">
-            <span>速度</span>
+            <span data-i18n="speed">速度</span>
             <span class="value" id="speed-value">0.1</span>
           </div>
           <input id="speed" type="range" min="0.1" max="1" step="0.1" value="0.1" />
         </div>
         <div class="control">
           <div class="control-label">
-            <span>明度</span>
+            <span data-i18n="brightness">明度</span>
             <span class="value" id="brightness-value">1.00</span>
           </div>
           <input id="brightness" type="range" min="0.1" max="2" step="0.05" value="1" />
         </div>
         <div class="control">
           <div class="control-label">
-            <span>軌跡の長さ</span>
+            <span data-i18n="trail">軌跡の長さ</span>
             <span class="value" id="trail-value">32</span>
           </div>
           <input id="trail" type="range" min="4" max="256" step="2" value="32" />
         </div>
       </details>
       <details class="section">
-        <summary>風速オーバーレイ</summary>
+        <summary data-i18n="secOverlay">風速オーバーレイ</summary>
         <div class="control">
           <label class="check-label">
             <input id="overlay" type="checkbox" />
-            <span>風速カラーオーバーレイ</span>
+            <span data-i18n="overlayToggle">風速カラーオーバーレイ</span>
           </label>
         </div>
         <div class="control" id="overlay-detail">
           <div class="control-label">
-            <span>オーバーレイ濃度</span>
+            <span data-i18n="overlayOpacity">オーバーレイ濃度</span>
             <span class="value" id="overlay-opacity-value">0.30</span>
           </div>
           <input id="overlay-opacity" type="range" min="0.1" max="1" step="0.05" value="0.3" />
@@ -79,10 +79,19 @@
         </div>
       </details>
       <details class="section" id="appearance">
-        <summary>表示設定</summary>
+        <summary data-i18n="secAppearance">表示設定</summary>
         <div class="control">
           <div class="control-label">
-            <span>時刻のタイムゾーン</span>
+            <span data-i18n="language">言語</span>
+          </div>
+          <select id="lang">
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <div class="control">
+          <div class="control-label">
+            <span data-i18n="timezone">時刻のタイムゾーン</span>
             <span class="value" id="tz-value">UTC+9</span>
           </div>
           <input id="tz" type="range" min="-12" max="14" step="1" value="9" />
@@ -90,100 +99,100 @@
         <div class="control">
           <label class="check-label">
             <input id="show-fps" type="checkbox" checked />
-            <span>FPS を表示する</span>
+            <span data-i18n="showFps">FPS を表示する</span>
           </label>
         </div>
         <div class="control">
           <div class="control-label">
-            <span>パーティクル配色</span>
+            <span data-i18n="particleScheme">パーティクル配色</span>
           </div>
           <select id="scheme">
-            <option value="standard" selected>標準</option>
-            <option value="earth">アース</option>
+            <option value="standard" selected data-i18n="schemeStandard">標準</option>
+            <option value="earth" data-i18n="schemeEarth">アース</option>
             <option value="viridis">Viridis</option>
             <option value="turbo">Turbo</option>
           </select>
         </div>
         <div class="color-row">
-          <span class="name">海岸線</span>
+          <span class="name" data-i18n="colCoast">海岸線</span>
           <input id="col-coast-op" class="mini-op" type="range" min="0" max="1" step="0.05" value="0.5" />
           <input id="col-coast" type="color" value="#9db4d6" />
         </div>
         <div class="color-row">
-          <span class="name">国境線</span>
+          <span class="name" data-i18n="colBorder">国境線</span>
           <input id="col-border-op" class="mini-op" type="range" min="0" max="1" step="0.05" value="0.3" />
           <input id="col-border" type="color" value="#8593a8" />
         </div>
         <div class="color-row">
-          <span class="name">海</span>
+          <span class="name" data-i18n="colOcean">海</span>
           <input id="col-ocean" type="color" value="#0c1422" />
         </div>
         <div class="color-row">
-          <span class="name">陸</span>
+          <span class="name" data-i18n="colLand">陸</span>
           <input id="col-land" type="color" value="#1d2939" />
         </div>
         <div class="color-row">
-          <span class="name">経緯線</span>
+          <span class="name" data-i18n="colGrat">経緯線</span>
           <input id="col-grat" type="color" value="#ffffff" />
         </div>
         <div class="color-row">
-          <span class="name">大気光</span>
+          <span class="name" data-i18n="colHalo">大気光</span>
           <input id="col-halo" type="color" value="#4a7fc9" />
         </div>
         <div class="color-row">
-          <span class="name">背景</span>
+          <span class="name" data-i18n="colBg">背景</span>
           <input id="col-bg" type="color" value="#0a0e14" />
         </div>
         <div class="color-row">
-          <span class="name">星</span>
+          <span class="name" data-i18n="colStars">星</span>
           <input id="col-stars" type="color" value="#5a6a82" />
         </div>
-        <button id="colors-reset" type="button">既定に戻す</button>
+        <button id="colors-reset" type="button" data-i18n="colorsReset">既定に戻す</button>
       </details>
       <details class="section">
-        <summary>データ取得</summary>
+        <summary data-i18n="secData">データ取得</summary>
         <div class="control">
           <label class="check-label">
             <input id="auto-fetch" type="checkbox" checked />
-            <span>起動時に最新データを自動取得</span>
+            <span data-i18n="autoFetch">起動時に最新データを自動取得</span>
           </label>
         </div>
         <div class="control">
           <div class="control-label">
-            <span>予報時刻</span>
+            <span data-i18n="forecastHour">予報時刻</span>
             <span class="value" id="fcst-value">+0h</span>
           </div>
           <input id="fcst" type="range" min="0" max="120" step="3" value="0" />
         </div>
-        <button id="fetch-btn">最新データを取得</button>
+        <button id="fetch-btn" data-i18n="fetchLatest">最新データを取得</button>
         <div class="control">
           <div class="control-label">
             <span id="hist-time-label">過去日時 (UTC+9)</span>
           </div>
           <input id="hist-time" type="datetime-local" min="2021-01-01T00:00" step="10800" />
         </div>
-        <button id="hist-btn">過去データを取得</button>
+        <button id="hist-btn" data-i18n="fetchArchive">過去データを取得</button>
         <div class="meta" id="fetch-status"></div>
       </details>
 
       <details class="section" id="db">
-        <summary>保存データ / アニメーション</summary>
+        <summary data-i18n="secDb">保存データ / アニメーション</summary>
 
         <div class="control">
-          <div class="control-label"><span>保存済みコレクション</span></div>
+          <div class="control-label"><span data-i18n="savedCollections">保存済みコレクション</span></div>
           <div id="db-list" class="db-list">
-            <div class="db-empty">まだありません</div>
+            <div class="db-empty" data-i18n="noCollections">まだありません</div>
           </div>
         </div>
 
         <div class="control">
-          <div class="control-label"><span>新規作成</span></div>
-          <input id="db-name" type="text" placeholder="名前" maxlength="40" />
+          <div class="control-label"><span data-i18n="newCollection">新規作成</span></div>
+          <input id="db-name" type="text" placeholder="名前" data-i18n-ph="namePlaceholder" maxlength="40" />
         </div>
         <div class="control">
           <select id="db-source">
-            <option value="archive" selected>過去アーカイブ</option>
-            <option value="forecast">予報シーケンス</option>
+            <option value="archive" selected data-i18n="srcArchive">過去アーカイブ</option>
+            <option value="forecast" data-i18n="srcForecast">予報シーケンス</option>
           </select>
         </div>
         <div id="db-archive-fields">
@@ -199,14 +208,14 @@
         <div id="db-forecast-fields" hidden>
           <div class="control">
             <div class="control-label">
-              <span>開始予報時刻</span>
+              <span data-i18n="fcstStart">開始予報時刻</span>
               <span class="value" id="db-fcst-start-value">+0h</span>
             </div>
             <input id="db-fcst-start" type="range" min="0" max="120" step="3" value="0" />
           </div>
           <div class="control">
             <div class="control-label">
-              <span>終了予報時刻</span>
+              <span data-i18n="fcstEnd">終了予報時刻</span>
               <span class="value" id="db-fcst-end-value">+120h</span>
             </div>
             <input id="db-fcst-end" type="range" min="0" max="120" step="3" value="120" />
@@ -214,12 +223,12 @@
         </div>
         <div class="control">
           <div class="control-label">
-            <span>時間刻み</span>
+            <span data-i18n="step">時間刻み</span>
             <span class="value" id="db-step-value">3h</span>
           </div>
           <input id="db-step" type="range" min="3" max="24" step="3" value="3" />
         </div>
-        <button id="db-build-btn">この区間を保存</button>
+        <button id="db-build-btn" data-i18n="saveRange">この区間を保存</button>
         <div class="meta" id="db-build-status"></div>
 
         <div id="db-player" hidden>
@@ -231,35 +240,35 @@
             </div>
             <input id="db-scrub" type="range" min="0" max="0" step="1" value="0" />
           </div>
-          <button id="db-play">▶ 再生</button>
+          <button id="db-play" data-i18n="play">▶ 再生</button>
           <div class="control">
             <div class="control-label">
-              <span>速度 (秒/コマ)</span>
+              <span data-i18n="speedPerFrame">速度 (秒/コマ)</span>
               <span class="value" id="db-speed-value">0.50</span>
             </div>
             <input id="db-speed" type="range" min="0.05" max="2" step="0.05" value="0.5" />
           </div>
           <div class="control">
             <div class="control-label">
-              <span>開始位置</span>
+              <span data-i18n="inPoint">開始位置</span>
               <span class="value" id="db-in-value">0</span>
             </div>
             <input id="db-in" type="range" min="0" max="0" step="1" value="0" />
           </div>
           <div class="control">
             <div class="control-label">
-              <span>終了位置</span>
+              <span data-i18n="outPoint">終了位置</span>
               <span class="value" id="db-out-value">0</span>
             </div>
             <input id="db-out" type="range" min="0" max="0" step="1" value="0" />
           </div>
           <label class="check-label">
             <input id="db-interp" type="checkbox" checked />
-            <span>フレーム補間</span>
+            <span data-i18n="interp">フレーム補間</span>
           </label>
           <label class="check-label">
             <input id="db-loop" type="checkbox" checked />
-            <span>ループ再生</span>
+            <span data-i18n="loop">ループ再生</span>
           </label>
         </div>
       </details>

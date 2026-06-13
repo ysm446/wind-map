@@ -6,6 +6,16 @@ import { ParticleSystem, COLOR_SCHEMES, type ColorStops } from './particles';
 import { GpuParticleSystem } from './gpu-particles';
 import { SpeedOverlay } from './overlay';
 import { RAMP_MAX_SPEED } from './wind-texture';
+import {
+  t,
+  setLang,
+  getLang,
+  applyStaticI18n,
+  tBuildRunning,
+  tBuildDone,
+  tConfirmDelete,
+  type Lang,
+} from './i18n';
 
 // 表示設定の既定色。index.html の input の初期値と一致させておく
 const DEFAULT_COLORS: Required<ColorSettings> = {
@@ -24,11 +34,12 @@ const DEFAULT_COLORS: Required<ColorSettings> = {
 const GLOBE_RADIUS = 1;
 const PARTICLE_RADIUS = 1.004; // 地表より少し浮かせて Z ファイティングを避ける
 
-const SOURCE_NAMES: Record<string, string> = {
-  cache: 'GFS キャッシュ',
-  sample: 'GFS 同梱サンプル',
-  nomads: 'GFS NOMADS',
-  archive: 'GFS アーカイブ',
+// データソースの種別キー → i18n キー
+const SOURCE_KEY: Record<string, string> = {
+  cache: 'srcCache',
+  sample: 'srcSample',
+  nomads: 'srcNomads',
+  archive: 'srcArchiveData',
 };
 
 // 時刻表示のタイムゾーンオフセット(時間)。設定で変更でき、UTC からのずれを表す。
@@ -66,19 +77,19 @@ function describeField(field: WindField, sourceName: string): string {
   return `${sourceName} / ${time} ${tzLabel()}${fhLabel}`;
 }
 
-async function loadWindField(): Promise<{ field: WindField; sourceName: string | null }> {
+async function loadWindField(): Promise<{ field: WindField; source: string | null }> {
   try {
     const result = await window.windApi.getWindData();
     if (result) {
       const field = WindField.fromGfsJson(result.records);
       if (field) {
-        return { field, sourceName: SOURCE_NAMES[result.source] };
+        return { field, source: result.source };
       }
     }
   } catch (err) {
     console.error('wind data load failed', err);
   }
-  return { field: makeSyntheticWind(), sourceName: null };
+  return { field: makeSyntheticWind(), source: null };
 }
 
 async function init(): Promise<void> {
@@ -175,6 +186,7 @@ async function init(): Promise<void> {
   const tzSlider = document.getElementById('tz') as HTMLInputElement;
   const tzValue = document.getElementById('tz-value')!;
   const showFpsCheck = document.getElementById('show-fps') as HTMLInputElement;
+  const langSelect = document.getElementById('lang') as HTMLSelectElement;
 
   // 色設定の input 要素。キーは ColorSettings / DEFAULT_COLORS と対応する
   const colorEl = (id: string) => document.getElementById(id) as HTMLInputElement;
@@ -229,6 +241,10 @@ async function init(): Promise<void> {
     }
     if (typeof s.autoFetch === 'boolean') autoFetchCheck.checked = s.autoFetch;
     if (typeof s.showFps === 'boolean') showFpsCheck.checked = s.showFps;
+    if (s.lang === 'ja' || s.lang === 'en') {
+      setLang(s.lang);
+      langSelect.value = s.lang;
+    }
     if (s.colors) {
       const hex = /^#[0-9a-fA-F]{6}$/;
       for (const key of Object.keys(colorInputs) as Array<keyof typeof colorInputs>) {
@@ -261,6 +277,7 @@ async function init(): Promise<void> {
           tz: displayTz,
           autoFetch: autoFetchCheck.checked,
           showFps: showFpsCheck.checked,
+          lang: getLang(),
           colors: {
             coastline: colorInputs.coastline.value,
             coastlineOpacity: Number(coastOpInput.value),
@@ -501,38 +518,44 @@ async function init(): Promise<void> {
     histTime.value = tzInputValue(pastMs);
   }
 
-  // 現在表示中のデータ情報。タイムゾーン変更時にラベルを作り直すため保持する
+  // 現在表示中のデータ情報。タイムゾーン・言語変更時にラベルを作り直すため保持する
   let curField: WindField | null = null;
-  let curSourceName: string | null = null;
-  let curCollectionText: string | null = null;
+  let curSourceKey: string | null = null;
+  let curCollection: { name: string; n: number } | null = null;
   function refreshSourceLabel(): void {
-    if (curCollectionText !== null) {
-      dataSourceEl.textContent = curCollectionText;
-    } else if (curField && curField.refTime && curSourceName) {
-      dataSourceEl.textContent = `データ: ${describeField(curField, curSourceName)}`;
+    if (curCollection) {
+      dataSourceEl.textContent =
+        t('dataPrefix') +
+        curCollection.name +
+        t('savedTag') +
+        ' / ' +
+        curCollection.n +
+        t('framesUnit');
+    } else if (curField && curField.refTime && curSourceKey) {
+      dataSourceEl.textContent = t('dataPrefix') + describeField(curField, t(SOURCE_KEY[curSourceKey]));
     } else if (curField) {
-      dataSourceEl.textContent = 'データ: 合成風場(フォールバック)';
+      dataSourceEl.textContent = t('dataPrefix') + t('synthetic');
     }
   }
 
   async function runFetch(fetcher: () => Promise<WindApiResult>): Promise<void> {
     fetchBtn.disabled = true;
     histBtn.disabled = true;
-    fetchStatus.textContent = '取得中…';
+    fetchStatus.textContent = t('fetching');
     try {
       const result = await fetcher();
       const field = WindField.fromGfsJson(result.records);
-      if (!field) throw new Error('データを解釈できませんでした');
+      if (!field) throw new Error(t('cannotParse'));
       applyWind(field);
       curField = field;
-      curSourceName = SOURCE_NAMES[result.source];
-      curCollectionText = null;
+      curSourceKey = result.source;
+      curCollection = null;
       refreshSourceLabel();
-      fetchStatus.textContent = '取得完了';
+      fetchStatus.textContent = t('fetchDone');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // IPC 経由のエラーは定型の前置きが付くので除去する
-      fetchStatus.textContent = `取得失敗: ${message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`;
+      fetchStatus.textContent = `${t('fetchFail')}${message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`;
     } finally {
       fetchBtn.disabled = false;
       histBtn.disabled = false;
@@ -553,7 +576,7 @@ async function init(): Promise<void> {
   });
   histBtn.addEventListener('click', () => {
     if (!histTime.value) {
-      fetchStatus.textContent = '日時を入力してください';
+      fetchStatus.textContent = t('enterDateTime');
       return;
     }
     // datetime-local の値は選択中タイムゾーンの壁時計時刻として解釈し UTC に直す
@@ -610,7 +633,8 @@ async function init(): Promise<void> {
   // 補間は GPU パーティクル経路でのみ行う(CPU フォールバックは離散)
   const canInterp = (): boolean => gpuParticles !== null && dbInterp.checked;
 
-  const SOURCE_LABEL = { forecast: '予報', archive: 'アーカイブ' };
+  const listSourceLabel = (s: 'forecast' | 'archive'): string =>
+    s === 'forecast' ? t('listForecast') : t('listArchive');
 
   function shortTime(iso: string | null): string {
     return iso ? isoInTz(new Date(iso).getTime()).slice(0, 16).replace('T', ' ') : '—';
@@ -621,7 +645,7 @@ async function init(): Promise<void> {
     if (items.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'db-empty';
-      empty.textContent = 'まだありません';
+      empty.textContent = t('noCollections');
       dbList.appendChild(empty);
       return;
     }
@@ -635,12 +659,11 @@ async function init(): Promise<void> {
       name.textContent = c.name;
       const sub = document.createElement('div');
       sub.className = 'db-sub';
-      sub.textContent = `${SOURCE_LABEL[c.source]} · ${shortTime(c.start)}〜${shortTime(c.end)} · ${c.frameCount}コマ`;
+      sub.textContent = `${listSourceLabel(c.source)} · ${shortTime(c.start)}〜${shortTime(c.end)} · ${c.frameCount}${t('framesUnit')}`;
       info.append(name, sub);
       const del = document.createElement('button');
       del.className = 'db-del';
       del.textContent = '×';
-      del.title = '削除';
       del.addEventListener('click', (e) => {
         e.stopPropagation();
         void deleteCollection(c.id, c.name);
@@ -657,7 +680,7 @@ async function init(): Promise<void> {
   }
 
   async function deleteCollection(id: string, name: string): Promise<void> {
-    if (!window.confirm(`「${name}」を削除しますか?`)) return;
+    if (!window.confirm(tConfirmDelete(name))) return;
     await window.windApi.dbDelete(id).catch((err) => console.error('db delete failed', err));
     if (player.id === id) {
       player.id = null;
@@ -711,7 +734,7 @@ async function init(): Promise<void> {
 
   function setPlaying(on: boolean): void {
     player.playing = on && player.frames.length > 1;
-    dbPlay.textContent = player.playing ? '⏸ 一時停止' : '▶ 再生';
+    dbPlay.textContent = player.playing ? t('pause') : t('play');
     if (player.playing) {
       lastPlayTime = 0;
       // 終端から再生開始したら先頭へ戻す
@@ -723,7 +746,7 @@ async function init(): Promise<void> {
     const meta = await window.windApi.dbGet(id).catch(() => null);
     if (!meta || meta.frames.length === 0) return;
     dbPlayerName.textContent = meta.name;
-    dbFrameLabel.textContent = '読み込み中…';
+    dbFrameLabel.textContent = t('loadingFrames');
     dbPlayer.hidden = false;
     const frames: WindField[] = [];
     for (let i = 0; i < meta.frames.length; i++) {
@@ -733,7 +756,7 @@ async function init(): Promise<void> {
       if (field) frames.push(field);
     }
     if (frames.length === 0) {
-      dbFrameLabel.textContent = '読み込み失敗';
+      dbFrameLabel.textContent = t('loadFailed');
       return;
     }
     player.id = id;
@@ -750,10 +773,12 @@ async function init(): Promise<void> {
     dbOut.value = max;
     dbInValue.textContent = '0';
     dbOutValue.textContent = max;
-    dbPlay.textContent = '▶ 再生';
+    dbPlay.textContent = t('play');
     timeline.value = '0';
     timelineBar.hidden = false;
-    curCollectionText = `データ: ${meta.name}(保存) / ${frames.length}コマ`;
+    curCollection = { name: meta.name, n: frames.length };
+    curField = null;
+    curSourceKey = null;
     refreshSourceLabel();
     setFrame(0);
     void refreshDbList();
@@ -809,9 +834,9 @@ async function init(): Promise<void> {
 
   window.windApi.onBuildProgress((p) => {
     if (p.phase === 'running') {
-      dbBuildStatus.textContent = `取得中… ${p.current}/${p.total}(保存 ${p.saved})`;
+      dbBuildStatus.textContent = tBuildRunning(p.current, p.total, p.saved);
     } else if (p.phase === 'done') {
-      dbBuildStatus.textContent = p.message ?? `保存完了(${p.saved}コマ)`;
+      dbBuildStatus.textContent = p.message ?? tBuildDone(p.saved);
     }
   });
 
@@ -819,7 +844,7 @@ async function init(): Promise<void> {
     const source = dbSource.value === 'forecast' ? 'forecast' : 'archive';
     const name =
       dbName.value.trim() ||
-      `${SOURCE_LABEL[source]} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+      `${listSourceLabel(source)} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
     let opts: BuildOptions;
     if (source === 'forecast') {
       opts = {
@@ -831,7 +856,7 @@ async function init(): Promise<void> {
       };
     } else {
       if (!dbStart.value || !dbEnd.value) {
-        dbBuildStatus.textContent = '開始/終了日時を入力してください';
+        dbBuildStatus.textContent = t('enterStartEnd');
         return;
       }
       opts = {
@@ -843,7 +868,7 @@ async function init(): Promise<void> {
       };
     }
     dbBuildBtn.disabled = true;
-    dbBuildStatus.textContent = '準備中…';
+    dbBuildStatus.textContent = t('buildPreparing');
     window.windApi
       .dbBuild(opts)
       .then((summary) => {
@@ -852,7 +877,7 @@ async function init(): Promise<void> {
       })
       .catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
-        dbBuildStatus.textContent = `失敗: ${message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`;
+        dbBuildStatus.textContent = `${t('buildFail')}${message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`;
       })
       .finally(() => {
         dbBuildBtn.disabled = false;
@@ -909,9 +934,9 @@ async function init(): Promise<void> {
   function syncTz(): void {
     const label = tzLabel();
     tzValue.textContent = label;
-    histTimeLabel.textContent = `過去日時 (${label})`;
-    dbStartLabel.textContent = `開始 (${label})`;
-    dbEndLabel.textContent = `終了 (${label})`;
+    histTimeLabel.textContent = `${t('histTime')} (${label})`;
+    dbStartLabel.textContent = `${t('startLabel')} (${label})`;
+    dbEndLabel.textContent = `${t('endLabel')} (${label})`;
     // アーカイブ下限 (2021-01-01 UTC) と現在を、選択中タイムゾーンの壁時計へ直す
     const minVal = tzInputValue(Date.UTC(2021, 0, 1));
     const maxVal = tzInputValue(Date.now());
@@ -925,17 +950,30 @@ async function init(): Promise<void> {
     refreshSourceLabel();
     void refreshDbList();
   }
-  syncTz();
   tzSlider.addEventListener('input', () => {
     displayTz = Number(tzSlider.value);
     syncTz();
     scheduleSave();
   });
 
+  // 言語の適用。静的ラベル(data-i18n)と、JS で組み立てる動的ラベルをまとめて更新する。
+  function applyLanguage(lang: Lang): void {
+    setLang(lang);
+    langSelect.value = lang;
+    applyStaticI18n();
+    dbPlay.textContent = t(player.playing ? 'pause' : 'play');
+    syncTz(); // hist/start/end ラベル・一覧・データラベル・表示中の時刻を再描画
+  }
+  applyLanguage(getLang());
+  langSelect.addEventListener('change', () => {
+    applyLanguage(langSelect.value === 'en' ? 'en' : 'ja');
+    scheduleSave();
+  });
+
   // スペースキーで再生/停止をトグルする。文字入力やボタン・選択肢・チェックボックス等に
   // フォーカスがあるときは、その既定動作(入力・クリック等)を優先する。
-  function spaceShouldToggle(t: EventTarget | null): boolean {
-    const el = t as HTMLElement | null;
+  function spaceShouldToggle(target: EventTarget | null): boolean {
+    const el = target as HTMLElement | null;
     if (!el) return true;
     if (el.isContentEditable) return false;
     const tag = el.tagName;
@@ -962,30 +1000,30 @@ async function init(): Promise<void> {
   // 起動時に最新データ(最新ランの解析 f000、現在時刻に最も近い実データ)を
   // 自動取得して差し替える。手動取得と違いボタンは無効化せず、失敗時は静かに継続。
   async function autoFetchLatest(): Promise<void> {
-    fetchStatus.textContent = '起動時の最新データを取得中…';
+    fetchStatus.textContent = t('startupFetching');
     try {
       const result = await window.windApi.fetchWind(0);
       const field = WindField.fromGfsJson(result.records);
       // 取得中にユーザーが保存データを開いていたら上書きしない
-      if (!field || curCollectionText !== null) {
+      if (!field || curCollection !== null) {
         fetchStatus.textContent = '';
         return;
       }
       applyWind(field);
       curField = field;
-      curSourceName = SOURCE_NAMES[result.source];
+      curSourceKey = result.source;
       refreshSourceLabel();
-      fetchStatus.textContent = '最新データに更新しました';
+      fetchStatus.textContent = t('updatedLatest');
     } catch (err) {
       console.error('startup fetch failed', err);
       fetchStatus.textContent = ''; // 失敗時はキャッシュ表示のまま
     }
   }
 
-  loadWindField().then(({ field, sourceName }) => {
+  loadWindField().then(({ field, source }) => {
     curField = field;
-    curSourceName = sourceName;
-    curCollectionText = null;
+    curSourceKey = source;
+    curCollection = null;
     refreshSourceLabel();
     applyWind(field);
     if (autoFetchCheck.checked) void autoFetchLatest();
