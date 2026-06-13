@@ -409,7 +409,18 @@ input[type="text"]:focus-visible {
 }
 
 #fps {
-  margin-bottom: 0;
+  position: fixed;
+  top: 12px;
+  right: 14px;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 12px;
+  color: #8b97a8;
+  pointer-events: none;
+  user-select: none;
+}
+
+#fps.hidden {
+  display: none;
 }
 
 /* 右下の大きな日付表示(風データの有効日時)。
@@ -418,10 +429,21 @@ input[type="text"]:focus-visible {
   position: fixed;
   right: 56px;
   bottom: 44px;
-  text-align: right;
+  /* 各行を右寄せで縦に積む。text-align + inline-block だと右端がはみ出すため flex を使う */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   pointer-events: none;
   user-select: none;
   font-family: Bahnschrift, "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+}
+
+/* 各数字を「0 の字幅 (1ch)」の固定セルに入れて中央寄せ。フォントが等幅数字に
+   対応しなくても座標が固定され、表示する数字やアニメーションでガタつかない */
+#date-display .dg {
+  display: inline-block;
+  width: 1ch;
+  text-align: center;
 }
 
 #date-display-date {

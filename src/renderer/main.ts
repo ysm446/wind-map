@@ -174,6 +174,7 @@ async function init(): Promise<void> {
   const colorsResetBtn = document.getElementById('colors-reset') as HTMLButtonElement;
   const tzSlider = document.getElementById('tz') as HTMLInputElement;
   const tzValue = document.getElementById('tz-value')!;
+  const showFpsCheck = document.getElementById('show-fps') as HTMLInputElement;
 
   // 色設定の input 要素。キーは ColorSettings / DEFAULT_COLORS と対応する
   const colorEl = (id: string) => document.getElementById(id) as HTMLInputElement;
@@ -227,6 +228,7 @@ async function init(): Promise<void> {
       tzSlider.value = String(displayTz);
     }
     if (typeof s.autoFetch === 'boolean') autoFetchCheck.checked = s.autoFetch;
+    if (typeof s.showFps === 'boolean') showFpsCheck.checked = s.showFps;
     if (s.colors) {
       const hex = /^#[0-9a-fA-F]{6}$/;
       for (const key of Object.keys(colorInputs) as Array<keyof typeof colorInputs>) {
@@ -258,6 +260,7 @@ async function init(): Promise<void> {
           particleScheme: schemeSelect.value,
           tz: displayTz,
           autoFetch: autoFetchCheck.checked,
+          showFps: showFpsCheck.checked,
           colors: {
             coastline: colorInputs.coastline.value,
             coastlineOpacity: Number(coastOpInput.value),
@@ -410,11 +413,15 @@ async function init(): Promise<void> {
     }
   }
 
+  // 各数字を固定幅セル (.dg) で包み、桁ごとの字幅差による横ずれを防ぐ。
+  // 値は数値・tzLabel のみなので HTML 挿入の危険はない。
+  const wrapDigits = (s: string): string => s.replace(/\d/g, (d) => `<span class="dg">${d}</span>`);
+
   // 右下の大きな日付表示(選択中タイムゾーン)
   function setDateDisplayMs(ms: number): void {
     const iso = isoInTz(ms);
-    dateDisplayDate.textContent = iso.slice(0, 10);
-    dateDisplayTime.textContent = `${iso.slice(11, 16)} ${tzLabel()}`;
+    dateDisplayDate.innerHTML = wrapDigits(iso.slice(0, 10));
+    dateDisplayTime.innerHTML = wrapDigits(`${iso.slice(11, 16)} ${tzLabel()}`);
   }
 
   // フィールドの有効日時を表示する。合成風場など有効日時のないデータでは消す
@@ -533,6 +540,14 @@ async function init(): Promise<void> {
   }
 
   autoFetchCheck.addEventListener('change', scheduleSave);
+  function syncFps(): void {
+    fpsEl.classList.toggle('hidden', !showFpsCheck.checked);
+  }
+  syncFps();
+  showFpsCheck.addEventListener('change', () => {
+    syncFps();
+    scheduleSave();
+  });
   fetchBtn.addEventListener('click', () => {
     void runFetch(() => window.windApi.fetchWind(Number(fcstSlider.value)));
   });

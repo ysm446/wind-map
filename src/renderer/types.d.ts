@@ -27,6 +27,7 @@ interface AppSettings {
   particleScheme?: string; // COLOR_SCHEMES のキー (standard / viridis / turbo)
   tz?: number; // 時刻表示のタイムゾーンオフセット (時間, UTC からのずれ)
   autoFetch?: boolean; // 起動時に最新データを自動取得するか
+  showFps?: boolean; // FPS を画面右上に表示するか
   colors?: ColorSettings;
 }
 
