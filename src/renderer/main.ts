@@ -164,6 +164,7 @@ async function init(): Promise<void> {
   const fcstSlider = document.getElementById('fcst') as HTMLInputElement;
   const fcstValue = document.getElementById('fcst-value')!;
   const fetchBtn = document.getElementById('fetch-btn') as HTMLButtonElement;
+  const autoFetchCheck = document.getElementById('auto-fetch') as HTMLInputElement;
   const fetchStatus = document.getElementById('fetch-status')!;
   const dataSourceEl = document.getElementById('data-source')!;
   const fpsEl = document.getElementById('fps')!;
@@ -225,6 +226,7 @@ async function init(): Promise<void> {
       displayTz = Math.min(14, Math.max(-12, Math.round(s.tz)));
       tzSlider.value = String(displayTz);
     }
+    if (typeof s.autoFetch === 'boolean') autoFetchCheck.checked = s.autoFetch;
     if (s.colors) {
       const hex = /^#[0-9a-fA-F]{6}$/;
       for (const key of Object.keys(colorInputs) as Array<keyof typeof colorInputs>) {
@@ -255,6 +257,7 @@ async function init(): Promise<void> {
           overlayOpacity: Number(overlayOpacity.value),
           particleScheme: schemeSelect.value,
           tz: displayTz,
+          autoFetch: autoFetchCheck.checked,
           colors: {
             coastline: colorInputs.coastline.value,
             coastlineOpacity: Number(coastOpInput.value),
@@ -520,6 +523,7 @@ async function init(): Promise<void> {
     }
   }
 
+  autoFetchCheck.addEventListener('change', scheduleSave);
   fetchBtn.addEventListener('click', () => {
     void runFetch(() => window.windApi.fetchWind(Number(fcstSlider.value)));
   });
@@ -898,12 +902,36 @@ async function init(): Promise<void> {
     gpuParticles?.resize();
   });
 
+  // 起動時に最新データ(最新ランの解析 f000、現在時刻に最も近い実データ)を
+  // 自動取得して差し替える。手動取得と違いボタンは無効化せず、失敗時は静かに継続。
+  async function autoFetchLatest(): Promise<void> {
+    fetchStatus.textContent = '起動時の最新データを取得中…';
+    try {
+      const result = await window.windApi.fetchWind(0);
+      const field = WindField.fromGfsJson(result.records);
+      // 取得中にユーザーが保存データを開いていたら上書きしない
+      if (!field || curCollectionText !== null) {
+        fetchStatus.textContent = '';
+        return;
+      }
+      applyWind(field);
+      curField = field;
+      curSourceName = SOURCE_NAMES[result.source];
+      refreshSourceLabel();
+      fetchStatus.textContent = '最新データに更新しました';
+    } catch (err) {
+      console.error('startup fetch failed', err);
+      fetchStatus.textContent = ''; // 失敗時はキャッシュ表示のまま
+    }
+  }
+
   loadWindField().then(({ field, sourceName }) => {
     curField = field;
     curSourceName = sourceName;
     curCollectionText = null;
     refreshSourceLabel();
     applyWind(field);
+    if (autoFetchCheck.checked) void autoFetchLatest();
   });
 
   // 動作検証用 (WINDMAP_SCREENSHOT) にカメラ状態を覗けるようにしておく

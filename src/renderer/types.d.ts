@@ -26,6 +26,7 @@ interface AppSettings {
   overlayOpacity?: number;
   particleScheme?: string; // COLOR_SCHEMES のキー (standard / viridis / turbo)
   tz?: number; // 時刻表示のタイムゾーンオフセット (時間, UTC からのずれ)
+  autoFetch?: boolean; // 起動時に最新データを自動取得するか
   colors?: ColorSettings;
 }
 
