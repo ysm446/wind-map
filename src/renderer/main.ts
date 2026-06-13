@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Globe, createCoastlines, createBorders } from './globe';
+import { Globe, createCoastlines, createBorders, lonLatToVector3 } from './globe';
 import { WindField, makeSyntheticWind } from './wind';
 import { ParticleSystem, COLOR_SCHEMES, type ColorStops } from './particles';
 import { GpuParticleSystem } from './gpu-particles';
@@ -276,6 +276,15 @@ async function init(): Promise<void> {
   }
 
   applySettings(await window.windApi.getSettings().catch(() => null));
+
+  // 起動時、設定タイムゾーンに対応する経度 (オフセット×15°) を正面へ向ける。
+  // 例: UTC+9 → 東経135° (日本付近)。緯度は既定の少し見下ろす画角のまま。
+  {
+    const dir = lonLatToVector3(displayTz * 15, 0, 1);
+    const r = 3.2;
+    camera.position.set(dir.x * r, 0.8, dir.z * r);
+    controls.update();
+  }
 
   function currentStops(): ColorStops {
     return COLOR_SCHEMES[schemeSelect.value] ?? COLOR_SCHEMES.standard;
