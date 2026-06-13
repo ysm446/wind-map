@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('windApi', {
   fetchArchiveWind: (time: string) => ipcRenderer.invoke('wind:fetch-archive', { time }),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('settings:set', settings),
+  captureScreenshot: () => ipcRenderer.invoke('screenshot:capture'),
   // 風データDB
   dbList: () => ipcRenderer.invoke('db:list'),
   dbGet: (id: string) => ipcRenderer.invoke('db:get', id),

@@ -1023,6 +1023,32 @@ async function init(): Promise<void> {
     setPlaying(!player.playing);
   });
 
+  // 画面下中央の一時通知トースト
+  const toastEl = document.getElementById('toast')!;
+  let toastTimer: number | undefined;
+  function showToast(msg: string): void {
+    toastEl.textContent = msg;
+    toastEl.classList.remove('hidden');
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => toastEl.classList.add('hidden'), 2800);
+  }
+
+  // F12 でスクリーンショットを保存する(既定の DevTools 起動は抑止)
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'F12') return;
+    e.preventDefault();
+    window.windApi
+      .captureScreenshot()
+      .then((file) => {
+        const name = file.split(/[\\/]/).pop() ?? file;
+        showToast(t('screenshotSaved') + name);
+      })
+      .catch((err) => {
+        console.error('screenshot failed', err);
+        showToast(t('screenshotFailed'));
+      });
+  });
+
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();

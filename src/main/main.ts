@@ -84,6 +84,21 @@ ipcMain.handle('db:build', async (event, opts: BuildOptions) => {
   });
 });
 
+// 画面のスクリーンショットを data/screenshots に保存する
+ipcMain.handle('screenshot:capture', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) throw new Error('ウィンドウが見つかりません');
+  const image = await win.webContents.capturePage();
+  const dir = path.join(app.getAppPath(), 'data', 'screenshots');
+  fs.mkdirSync(dir, { recursive: true });
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  const name = `windmap-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.png`;
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, image.toPNG());
+  return file;
+});
+
 // UI 設定はアプリ直下の data/settings.json に保存する (ポータブル運用を想定)
 function settingsPath(): string {
   return path.join(app.getAppPath(), 'data', 'settings.json');

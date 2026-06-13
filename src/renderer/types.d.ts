@@ -97,6 +97,7 @@ interface Window {
     fetchArchiveWind(time: string): Promise<WindApiResult>;
     getSettings(): Promise<AppSettings | null>;
     saveSettings(settings: AppSettings): Promise<void>;
+    captureScreenshot(): Promise<string>;
     dbList(): Promise<CollectionSummary[]>;
     dbGet(id: string): Promise<CollectionMeta | null>;
     dbGetFrame(id: string, index: number): Promise<FramePayload>;

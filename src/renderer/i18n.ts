@@ -27,6 +27,8 @@ const STRINGS: Record<string, { ja: string; en: string }> = {
   showFps: { ja: 'FPS を表示する', en: 'Show FPS' },
   showLegend: { ja: '風速の凡例を表示', en: 'Show wind speed legend' },
   windSpeed: { ja: '風速 (m/s)', en: 'Wind speed (m/s)' },
+  screenshotSaved: { ja: 'スクリーンショットを保存: ', en: 'Screenshot saved: ' },
+  screenshotFailed: { ja: 'スクリーンショットの保存に失敗しました', en: 'Failed to save screenshot' },
   language: { ja: '言語', en: 'Language' },
   particleScheme: { ja: 'パーティクル配色', en: 'Particle colors' },
   schemeStandard: { ja: '標準', en: 'Standard' },

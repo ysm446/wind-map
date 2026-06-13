@@ -423,6 +423,32 @@ input[type="text"]:focus-visible {
   display: none;
 }
 
+/* 一時通知トースト(画面下中央) */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  max-width: 80vw;
+  padding: 8px 14px;
+  background: rgba(14, 19, 28, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #cdd6e4;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  user-select: none;
+  backdrop-filter: blur(6px);
+  transition: opacity 0.2s;
+}
+
+#toast.hidden {
+  opacity: 0;
+}
+
 /* 左下の風速カラースケール凡例 */
 #legend {
   position: fixed;
