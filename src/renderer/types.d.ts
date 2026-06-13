@@ -28,6 +28,63 @@ interface AppSettings {
   colors?: ColorSettings;
 }
 
+interface GridInfo {
+  nx: number;
+  ny: number;
+  lo1: number;
+  la1: number;
+  dx: number;
+  dy: number;
+}
+
+interface CollectionSummary {
+  id: string;
+  name: string;
+  source: 'forecast' | 'archive';
+  frameCount: number;
+  start: string | null;
+  end: string | null;
+  updatedAt: string;
+}
+
+interface FrameMeta {
+  time: string;
+  refTime: string;
+  forecastHour: number;
+  file: string;
+}
+
+interface CollectionMeta {
+  id: string;
+  name: string;
+  source: 'forecast' | 'archive';
+  grid: GridInfo;
+  frames: FrameMeta[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface FramePayload {
+  grid: GridInfo;
+  u: Float32Array;
+  v: Float32Array;
+  time: string;
+  refTime: string;
+  forecastHour: number;
+}
+
+type BuildOptions =
+  | { kind: 'forecast'; name: string; startHour: number; endHour: number; stepHours: number }
+  | { kind: 'archive'; name: string; start: string; end: string; stepHours: number };
+
+interface BuildProgress {
+  phase: 'running' | 'done' | 'error';
+  current: number;
+  total: number;
+  saved: number;
+  message?: string;
+}
+
 interface Window {
   windApi: {
     getWindData(): Promise<WindApiResult | null>;
@@ -35,6 +92,13 @@ interface Window {
     fetchArchiveWind(time: string): Promise<WindApiResult>;
     getSettings(): Promise<AppSettings | null>;
     saveSettings(settings: AppSettings): Promise<void>;
+    dbList(): Promise<CollectionSummary[]>;
+    dbGet(id: string): Promise<CollectionMeta | null>;
+    dbGetFrame(id: string, index: number): Promise<FramePayload>;
+    dbDelete(id: string): Promise<void>;
+    dbRename(id: string, name: string): Promise<void>;
+    dbBuild(opts: BuildOptions): Promise<CollectionSummary | null>;
+    onBuildProgress(cb: (p: BuildProgress) => void): () => void;
   };
 }
 

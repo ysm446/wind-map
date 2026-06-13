@@ -476,6 +476,299 @@ async function init(): Promise<void> {
     void runFetch(() => window.windApi.fetchArchiveWind(`${histTime.value}:00Z`));
   });
 
+  // --- 風データDB / アニメーション ---
+  const dbList = document.getElementById('db-list')!;
+  const dbName = document.getElementById('db-name') as HTMLInputElement;
+  const dbSource = document.getElementById('db-source') as HTMLSelectElement;
+  const dbArchiveFields = document.getElementById('db-archive-fields')!;
+  const dbForecastFields = document.getElementById('db-forecast-fields')!;
+  const dbStart = document.getElementById('db-start') as HTMLInputElement;
+  const dbEnd = document.getElementById('db-end') as HTMLInputElement;
+  const dbFcstStart = document.getElementById('db-fcst-start') as HTMLInputElement;
+  const dbFcstStartValue = document.getElementById('db-fcst-start-value')!;
+  const dbFcstEnd = document.getElementById('db-fcst-end') as HTMLInputElement;
+  const dbFcstEndValue = document.getElementById('db-fcst-end-value')!;
+  const dbStep = document.getElementById('db-step') as HTMLInputElement;
+  const dbStepValue = document.getElementById('db-step-value')!;
+  const dbBuildBtn = document.getElementById('db-build-btn') as HTMLButtonElement;
+  const dbBuildStatus = document.getElementById('db-build-status')!;
+  const dbPlayer = document.getElementById('db-player') as HTMLElement;
+  const dbPlayerName = document.getElementById('db-player-name')!;
+  const dbFrameLabel = document.getElementById('db-frame-label')!;
+  const dbScrub = document.getElementById('db-scrub') as HTMLInputElement;
+  const dbPlay = document.getElementById('db-play') as HTMLButtonElement;
+  const dbSpeed = document.getElementById('db-speed') as HTMLInputElement;
+  const dbSpeedValue = document.getElementById('db-speed-value')!;
+  const dbIn = document.getElementById('db-in') as HTMLInputElement;
+  const dbInValue = document.getElementById('db-in-value')!;
+  const dbOut = document.getElementById('db-out') as HTMLInputElement;
+  const dbOutValue = document.getElementById('db-out-value')!;
+  const dbLoop = document.getElementById('db-loop') as HTMLInputElement;
+
+  // 再生状態。frames は読み込み済みの風場をメモリに保持する
+  const player = {
+    id: null as string | null,
+    frames: [] as WindField[],
+    index: 0,
+    playing: false,
+    inPoint: 0,
+    outPoint: 0,
+    frameDuration: 0.5, // 秒/コマ
+    acc: 0,
+  };
+  let lastPlayTime = 0;
+
+  const SOURCE_LABEL = { forecast: '予報', archive: 'アーカイブ' };
+
+  function shortTime(iso: string | null): string {
+    return iso ? iso.slice(0, 16).replace('T', ' ') : '—';
+  }
+
+  function renderDbList(items: CollectionSummary[]): void {
+    dbList.innerHTML = '';
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'db-empty';
+      empty.textContent = 'まだありません';
+      dbList.appendChild(empty);
+      return;
+    }
+    for (const c of items) {
+      const item = document.createElement('div');
+      item.className = 'db-item' + (c.id === player.id ? ' active' : '');
+      const info = document.createElement('div');
+      info.className = 'db-info';
+      const name = document.createElement('div');
+      name.className = 'db-name';
+      name.textContent = c.name;
+      const sub = document.createElement('div');
+      sub.className = 'db-sub';
+      sub.textContent = `${SOURCE_LABEL[c.source]} · ${shortTime(c.start)}〜${shortTime(c.end)} · ${c.frameCount}コマ`;
+      info.append(name, sub);
+      const del = document.createElement('button');
+      del.className = 'db-del';
+      del.textContent = '×';
+      del.title = '削除';
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void deleteCollection(c.id, c.name);
+      });
+      item.append(info, del);
+      item.addEventListener('click', () => void loadCollection(c.id));
+      dbList.appendChild(item);
+    }
+  }
+
+  async function refreshDbList(): Promise<void> {
+    const items = await window.windApi.dbList().catch(() => [] as CollectionSummary[]);
+    renderDbList(items);
+  }
+
+  async function deleteCollection(id: string, name: string): Promise<void> {
+    if (!window.confirm(`「${name}」を削除しますか?`)) return;
+    await window.windApi.dbDelete(id).catch((err) => console.error('db delete failed', err));
+    if (player.id === id) {
+      player.id = null;
+      player.frames = [];
+      player.playing = false;
+      dbPlayer.hidden = true;
+    }
+    await refreshDbList();
+  }
+
+  function rangeLabel(): string {
+    const total = player.frames.length;
+    return total ? `${player.index + 1}/${total}` : '';
+  }
+
+  // 現在のフレームを地球に反映する (風だけ差し替え、粒子と軌跡は保持)
+  function setFrame(index: number): void {
+    if (!player.frames.length) return;
+    const i = Math.max(0, Math.min(player.frames.length - 1, index));
+    player.index = i;
+    applyWind(player.frames[i]);
+    dbScrub.value = String(i);
+    dbFrameLabel.textContent = rangeLabel();
+  }
+
+  function setPlaying(on: boolean): void {
+    player.playing = on && player.frames.length > 1;
+    dbPlay.textContent = player.playing ? '⏸ 一時停止' : '▶ 再生';
+    if (player.playing) {
+      player.acc = 0;
+      lastPlayTime = 0;
+      // 終端から再生開始したら先頭へ戻す
+      if (player.index >= player.outPoint) setFrame(player.inPoint);
+    }
+  }
+
+  async function loadCollection(id: string): Promise<void> {
+    const meta = await window.windApi.dbGet(id).catch(() => null);
+    if (!meta || meta.frames.length === 0) return;
+    dbPlayerName.textContent = meta.name;
+    dbFrameLabel.textContent = '読み込み中…';
+    dbPlayer.hidden = false;
+    const frames: WindField[] = [];
+    for (let i = 0; i < meta.frames.length; i++) {
+      const p = await window.windApi.dbGetFrame(id, i).catch(() => null);
+      if (!p) continue;
+      const field = WindField.fromArrays(p.grid, p.u, p.v, p.refTime, p.forecastHour);
+      if (field) frames.push(field);
+    }
+    if (frames.length === 0) {
+      dbFrameLabel.textContent = '読み込み失敗';
+      return;
+    }
+    player.id = id;
+    player.frames = frames;
+    player.inPoint = 0;
+    player.outPoint = frames.length - 1;
+    player.playing = false;
+    const max = String(frames.length - 1);
+    for (const slider of [dbScrub, dbIn, dbOut]) slider.max = max;
+    dbScrub.value = '0';
+    dbIn.value = '0';
+    dbOut.value = max;
+    dbInValue.textContent = '0';
+    dbOutValue.textContent = max;
+    dbPlay.textContent = '▶ 再生';
+    dataSourceEl.textContent = `データ: ${meta.name}(保存) / ${frames.length}コマ`;
+    setFrame(0);
+    void refreshDbList();
+  }
+
+  // 再生の前進。アニメーションループから dt(秒) を渡して呼ぶ
+  function advancePlayback(dt: number): void {
+    if (!player.playing || player.frames.length < 2) return;
+    player.acc += dt;
+    while (player.acc >= player.frameDuration) {
+      player.acc -= player.frameDuration;
+      let next = player.index + 1;
+      if (next > player.outPoint) {
+        if (dbLoop.checked) {
+          next = player.inPoint;
+        } else {
+          setFrame(player.outPoint);
+          setPlaying(false);
+          return;
+        }
+      }
+      setFrame(next);
+    }
+  }
+
+  // 出自に応じて入力欄を切り替える
+  function syncDbSource(): void {
+    const forecast = dbSource.value === 'forecast';
+    dbForecastFields.hidden = !forecast;
+    dbArchiveFields.hidden = forecast;
+  }
+  syncDbSource();
+  dbSource.addEventListener('change', syncDbSource);
+
+  // アーカイブ日時の既定値: 1 年前の 00:00 UTC から 24 時間
+  {
+    const now = new Date();
+    const s = new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate()));
+    const e = new Date(s.getTime() + 24 * 3600_000);
+    dbStart.value = s.toISOString().slice(0, 16);
+    dbEnd.value = e.toISOString().slice(0, 16);
+    dbStart.max = now.toISOString().slice(0, 16);
+    dbEnd.max = now.toISOString().slice(0, 16);
+  }
+
+  dbFcstStart.addEventListener('input', () => {
+    dbFcstStartValue.textContent = `+${dbFcstStart.value}h`;
+  });
+  dbFcstEnd.addEventListener('input', () => {
+    dbFcstEndValue.textContent = `+${dbFcstEnd.value}h`;
+  });
+  dbStep.addEventListener('input', () => {
+    dbStepValue.textContent = `${dbStep.value}h`;
+  });
+
+  window.windApi.onBuildProgress((p) => {
+    if (p.phase === 'running') {
+      dbBuildStatus.textContent = `取得中… ${p.current}/${p.total}(保存 ${p.saved})`;
+    } else if (p.phase === 'done') {
+      dbBuildStatus.textContent = p.message ?? `保存完了(${p.saved}コマ)`;
+    }
+  });
+
+  dbBuildBtn.addEventListener('click', () => {
+    const source = dbSource.value === 'forecast' ? 'forecast' : 'archive';
+    const name =
+      dbName.value.trim() ||
+      `${SOURCE_LABEL[source]} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+    let opts: BuildOptions;
+    if (source === 'forecast') {
+      opts = {
+        kind: 'forecast',
+        name,
+        startHour: Number(dbFcstStart.value),
+        endHour: Number(dbFcstEnd.value),
+        stepHours: Number(dbStep.value),
+      };
+    } else {
+      if (!dbStart.value || !dbEnd.value) {
+        dbBuildStatus.textContent = '開始/終了日時を入力してください';
+        return;
+      }
+      opts = {
+        kind: 'archive',
+        name,
+        start: `${dbStart.value}:00Z`,
+        end: `${dbEnd.value}:00Z`,
+        stepHours: Number(dbStep.value),
+      };
+    }
+    dbBuildBtn.disabled = true;
+    dbBuildStatus.textContent = '準備中…';
+    window.windApi
+      .dbBuild(opts)
+      .then((summary) => {
+        void refreshDbList();
+        if (summary) void loadCollection(summary.id);
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        dbBuildStatus.textContent = `失敗: ${message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`;
+      })
+      .finally(() => {
+        dbBuildBtn.disabled = false;
+      });
+  });
+
+  dbPlay.addEventListener('click', () => setPlaying(!player.playing));
+  dbScrub.addEventListener('input', () => {
+    setPlaying(false);
+    setFrame(Number(dbScrub.value));
+  });
+  dbSpeed.addEventListener('input', () => {
+    player.frameDuration = Number(dbSpeed.value);
+    dbSpeedValue.textContent = player.frameDuration.toFixed(2);
+  });
+  dbIn.addEventListener('input', () => {
+    player.inPoint = Number(dbIn.value);
+    if (player.inPoint > player.outPoint) {
+      player.outPoint = player.inPoint;
+      dbOut.value = String(player.outPoint);
+      dbOutValue.textContent = dbOut.value;
+    }
+    dbInValue.textContent = dbIn.value;
+  });
+  dbOut.addEventListener('input', () => {
+    player.outPoint = Number(dbOut.value);
+    if (player.outPoint < player.inPoint) {
+      player.inPoint = player.outPoint;
+      dbIn.value = String(player.inPoint);
+      dbInValue.textContent = dbIn.value;
+    }
+    dbOutValue.textContent = dbOut.value;
+  });
+
+  void refreshDbList();
+
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
@@ -499,7 +792,12 @@ async function init(): Promise<void> {
   let frames = 0;
   let lastFpsTime = performance.now();
 
-  renderer.setAnimationLoop(() => {
+  renderer.setAnimationLoop((time: number) => {
+    if (player.playing) {
+      if (lastPlayTime === 0) lastPlayTime = time;
+      advancePlayback((time - lastPlayTime) / 1000);
+      lastPlayTime = time;
+    }
     controls.update();
     coastlines.update(controls.getDistance());
     borders.update(controls.getDistance());

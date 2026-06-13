@@ -77,6 +77,18 @@ export class WindField {
     );
   }
 
+  // DB から読み出したフレーム (格子情報 + u/v 配列) から構築する
+  static fromArrays(
+    grid: Pick<GfsHeader, 'nx' | 'ny' | 'lo1' | 'la1' | 'dx' | 'dy'>,
+    u: Float32Array,
+    v: Float32Array,
+    refTime: string | null = null,
+    forecastTime: number | null = null,
+  ): WindField | null {
+    if (u.length !== grid.nx * grid.ny || v.length !== grid.nx * grid.ny) return null;
+    return new WindField(grid, u, v, refTime, forecastTime);
+  }
+
   // GPU テクスチャ生成用に格子データへの読み取りアクセスを提供する
   get uValues(): Float32Array {
     return this.uData;

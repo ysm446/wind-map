@@ -3,6 +3,14 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fetchGfsWind } from './nomads';
 import { fetchArchiveWind } from './archive';
+import {
+  listCollections,
+  getCollection,
+  deleteCollection,
+  renameCollection,
+  readFrame,
+} from './store';
+import { buildCollection, BuildOptions } from './db-build';
 
 // 風データの探索順: ユーザーキャッシュ → アプリ同梱サンプル
 function getWindDataCandidates(): Array<{ source: string; filePath: string }> {
@@ -50,6 +58,30 @@ ipcMain.handle('wind:fetch-archive', async (_event, opts: { time?: string } | un
   fs.mkdirSync(cacheDir, { recursive: true });
   fs.writeFileSync(path.join(cacheDir, 'current-wind.json'), JSON.stringify(result.records));
   return { source: 'archive', records: result.records };
+});
+
+// 風データDB: 保存済みコレクションの一覧・取得・削除・改名・区間ビルド
+ipcMain.handle('db:list', async () => listCollections());
+
+ipcMain.handle('db:get', async (_event, id: string) => getCollection(id));
+
+ipcMain.handle('db:get-frame', async (_event, opts: { id: string; index: number }) =>
+  readFrame(opts.id, opts.index),
+);
+
+ipcMain.handle('db:delete', async (_event, id: string) => {
+  deleteCollection(id);
+});
+
+ipcMain.handle('db:rename', async (_event, opts: { id: string; name: string }) => {
+  renameCollection(opts.id, opts.name);
+});
+
+// 区間を取得して新規コレクションを作る。進捗は db:build-progress で逐次送る。
+ipcMain.handle('db:build', async (event, opts: BuildOptions) => {
+  return buildCollection(opts, (p) => {
+    if (!event.sender.isDestroyed()) event.sender.send('db:build-progress', p);
+  });
 });
 
 // UI 設定はアプリ直下の data/settings.json に保存する (ポータブル運用を想定)

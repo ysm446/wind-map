@@ -44,11 +44,67 @@ body {
   top: 12px;
   left: 12px;
   width: 240px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px 14px;
   background: rgba(14, 19, 28, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   backdrop-filter: blur(6px);
+}
+
+/* パネルのスクロールバーを控えめに */
+#panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+#panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+#panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 折りたたみセクション共通スタイル */
+.section {
+  margin-bottom: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+.section > summary {
+  cursor: pointer;
+  color: #9fb4d4;
+  font-weight: 600;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  margin-bottom: 0;
+}
+
+.section[open] > summary {
+  margin-bottom: 10px;
+}
+
+.section > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* 開閉を示す三角マーカー */
+.section > summary::before {
+  content: "▸";
+  font-size: 10px;
+  color: #6f7e94;
+  transition: transform 0.12s;
+}
+
+.section[open] > summary::before {
+  transform: rotate(90deg);
 }
 
 #panel h1 {
@@ -218,16 +274,6 @@ input[type="checkbox"] {
   margin-top: 2px;
 }
 
-#appearance {
-  margin-bottom: 12px;
-}
-
-#appearance summary {
-  cursor: pointer;
-  color: #9fb4d4;
-  margin-bottom: 8px;
-}
-
 .color-row {
   display: flex;
   align-items: center;
@@ -259,6 +305,102 @@ input[type="color"] {
 }
 
 #fetch-status {
+  min-height: 17px;
+  margin-bottom: 12px;
+}
+
+input[type="text"] {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  font: inherit;
+  color: #cdd6e4;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+}
+
+input[type="text"]:focus-visible {
+  outline: 1px solid rgba(159, 180, 212, 0.6);
+  outline-offset: 1px;
+}
+
+.db-list {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.db-empty {
+  font-size: 12px;
+  color: #6b7688;
+  padding: 4px 0;
+}
+
+.db-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.db-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.db-item.active {
+  border-color: rgba(159, 180, 212, 0.6);
+  background: rgba(159, 180, 212, 0.12);
+}
+
+.db-item .db-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.db-item .db-name {
+  color: #cdd6e4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-item .db-sub {
+  font-size: 11px;
+  color: #8b97a8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-item .db-del {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  font-size: 15px;
+  color: #8b97a8;
+}
+
+.db-item .db-del:hover {
+  color: #e6a0a0;
+}
+
+.db-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 12px 0;
+}
+
+#db-build-status {
   min-height: 17px;
 }
 
