@@ -589,6 +589,8 @@ async function init(): Promise<void> {
   const dbOutValue = document.getElementById('db-out-value')!;
   const dbInterp = document.getElementById('db-interp') as HTMLInputElement;
   const dbLoop = document.getElementById('db-loop') as HTMLInputElement;
+  const timelineBar = document.getElementById('timeline-bar') as HTMLElement;
+  const timeline = document.getElementById('timeline') as HTMLInputElement;
 
   // 再生状態。frames は読み込み済みの風場をメモリに保持する。
   // pos は連続位置(フレーム単位)で、補間時は小数部を 2 コマの混合率に使う。
@@ -662,6 +664,7 @@ async function init(): Promise<void> {
       player.frames = [];
       player.playing = false;
       dbPlayer.hidden = true;
+      timelineBar.hidden = true;
     }
     await refreshDbList();
   }
@@ -671,11 +674,12 @@ async function init(): Promise<void> {
   function applyAtPos(): void {
     const n = player.frames.length;
     if (!n) return;
-    const pos = Math.max(player.inPoint, Math.min(player.outPoint, player.pos));
+    const maxIdx = n - 1;
+    const pos = Math.max(0, Math.min(maxIdx, player.pos));
     const i0 = Math.floor(pos);
     const frac = pos - i0;
 
-    if (canInterp() && frac > 1e-3 && i0 + 1 <= player.outPoint) {
+    if (canInterp() && frac > 1e-3 && i0 + 1 <= maxIdx) {
       const a = player.frames[i0];
       const b = player.frames[i0 + 1];
       gpuParticles!.setWindInterp(a, b, frac);
@@ -695,6 +699,7 @@ async function init(): Promise<void> {
     const nearest = Math.round(pos);
     dbScrub.value = String(nearest);
     dbFrameLabel.textContent = `${nearest + 1}/${n}`;
+    timeline.value = String(pos);
   }
 
   // 指定コマへ移動して表示する (スクラブ・読込用)
@@ -739,13 +744,15 @@ async function init(): Promise<void> {
     player.playing = false;
     player.appliedIndex = -1;
     const max = String(frames.length - 1);
-    for (const slider of [dbScrub, dbIn, dbOut]) slider.max = max;
+    for (const slider of [dbScrub, dbIn, dbOut, timeline]) slider.max = max;
     dbScrub.value = '0';
     dbIn.value = '0';
     dbOut.value = max;
     dbInValue.textContent = '0';
     dbOutValue.textContent = max;
     dbPlay.textContent = '▶ 再生';
+    timeline.value = '0';
+    timelineBar.hidden = false;
     curCollectionText = `データ: ${meta.name}(保存) / ${frames.length}コマ`;
     refreshSourceLabel();
     setFrame(0);
@@ -857,6 +864,12 @@ async function init(): Promise<void> {
     setPlaying(false);
     setFrame(Number(dbScrub.value));
   });
+  // 右下の時間操作スライダー(連続位置でスクラブ)
+  timeline.addEventListener('input', () => {
+    setPlaying(false);
+    player.pos = Number(timeline.value);
+    applyAtPos();
+  });
   dbInterp.addEventListener('change', () => {
     player.appliedIndex = -1;
     applyAtPos();
@@ -917,6 +930,26 @@ async function init(): Promise<void> {
     displayTz = Number(tzSlider.value);
     syncTz();
     scheduleSave();
+  });
+
+  // スペースキーで再生/停止をトグルする。文字入力やボタン・選択肢・チェックボックス等に
+  // フォーカスがあるときは、その既定動作(入力・クリック等)を優先する。
+  function spaceShouldToggle(t: EventTarget | null): boolean {
+    const el = t as HTMLElement | null;
+    if (!el) return true;
+    if (el.isContentEditable) return false;
+    const tag = el.tagName;
+    if (tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return false;
+    // range スライダーはスペースを使わないのでトグル対象に含める
+    if (tag === 'INPUT') return (el as HTMLInputElement).type.toLowerCase() === 'range';
+    return true;
+  }
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' && e.key !== ' ') return;
+    if (!spaceShouldToggle(e.target)) return;
+    if (player.frames.length < 2) return; // 再生対象がないときは何もしない
+    e.preventDefault();
+    setPlaying(!player.playing);
   });
 
   window.addEventListener('resize', () => {

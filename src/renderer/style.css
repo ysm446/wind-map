@@ -452,6 +452,8 @@ input[type="text"]:focus-visible {
   letter-spacing: 0.06em;
   line-height: 1.05;
   color: rgba(205, 214, 228, 0.85);
+  /* 時刻行との見た目の右端を微調整 */
+  transform: translateX(5px);
 }
 
 #date-display-time {
@@ -459,4 +461,21 @@ input[type="text"]:focus-visible {
   font-weight: 300;
   letter-spacing: 0.14em;
   color: rgba(159, 180, 212, 0.7);
+}
+
+/* 右下の時刻の下に置く時間操作スライダー(タイムライン) */
+#timeline-bar {
+  position: fixed;
+  right: 56px;
+  bottom: 18px;
+  width: 560px;
+  max-width: calc(100vw - 112px);
+}
+
+#timeline-bar[hidden] {
+  display: none;
+}
+
+#timeline {
+  width: 100%;
 }
