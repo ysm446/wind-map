@@ -107,6 +107,10 @@ body {
   transform: rotate(90deg);
 }
 
+#panel.hidden {
+  display: none;
+}
+
 #panel h1 {
   font-size: 16px;
   font-weight: 600;

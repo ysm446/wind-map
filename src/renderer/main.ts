@@ -1033,6 +1033,29 @@ async function init(): Promise<void> {
     toastTimer = window.setTimeout(() => toastEl.classList.add('hidden'), 2800);
   }
 
+  // 文字入力中(テキスト入力欄・テキストエリア・選択肢・編集可能領域)かどうか
+  function isTypingTarget(target: EventTarget | null): boolean {
+    const el = target as HTMLElement | null;
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = el.tagName;
+    if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (tag === 'INPUT') {
+      const type = (el as HTMLInputElement).type.toLowerCase();
+      return !['range', 'checkbox', 'radio', 'button', 'color'].includes(type);
+    }
+    return false;
+  }
+
+  // M キーで左上メニューの表示/非表示をトグルする
+  const panelEl = document.getElementById('panel')!;
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'm' && e.key !== 'M') return;
+    if (isTypingTarget(e.target)) return;
+    e.preventDefault();
+    panelEl.classList.toggle('hidden');
+  });
+
   // F12 でスクリーンショットを保存する(既定の DevTools 起動は抑止)
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'F12') return;
