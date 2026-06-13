@@ -7,7 +7,12 @@
 import * as THREE from 'three';
 import { WindField } from './wind';
 import { type ColorStops } from './particles';
-import { createWindDataTexture, createSpeedRampTexture, RAMP_MAX_SPEED } from './wind-texture';
+import {
+  createWindDataTexture,
+  createSpeedRampTexture,
+  writeWindInterp,
+  RAMP_MAX_SPEED,
+} from './wind-texture';
 
 const VS = /* glsl */ `
 varying vec2 vUv;
@@ -73,6 +78,15 @@ export class SpeedOverlay {
     this.material.uniforms.uGrid.value.set(wind.lo1, wind.la1, wind.dx, wind.dy);
     this.material.uniforms.uGridSize.value.set(wind.nx, wind.ny);
     this.syncVisible();
+  }
+
+  // 2 フレームを時間補間した風場をその場で反映する(再生の補間用)
+  setWindInterp(a: WindField, b: WindField, t: number): void {
+    const size = this.material.uniforms.uGridSize.value as THREE.Vector2;
+    if (!this.windTexture || size.x !== a.nx || size.y !== a.ny) {
+      this.setWind(a);
+    }
+    writeWindInterp(this.windTexture!, a, b, t);
   }
 
   setColorStops(stops: ColorStops): void {

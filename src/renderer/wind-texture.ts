@@ -30,6 +30,28 @@ export function createWindDataTexture(wind: WindField): THREE.DataTexture {
   return tex;
 }
 
+// 既存の風テクスチャへ、2 フレームを時間補間した u/v を書き込む(テクスチャを
+// 再確保しない)。a/b は同一格子であること。t=0 で a、t=1 で b。
+export function writeWindInterp(
+  tex: THREE.DataTexture,
+  a: WindField,
+  b: WindField,
+  t: number,
+): void {
+  const data = tex.image.data as Uint16Array;
+  const ua = a.uValues;
+  const va = a.vValues;
+  const ub = b.uValues;
+  const vb = b.vValues;
+  const n = ua.length;
+  const toHalf = THREE.DataUtils.toHalfFloat;
+  for (let k = 0; k < n; k++) {
+    data[k * 4] = toHalf(ua[k] + (ub[k] - ua[k]) * t);
+    data[k * 4 + 1] = toHalf(va[k] + (vb[k] - va[k]) * t);
+  }
+  tex.needsUpdate = true;
+}
+
 // 風速 0〜RAMP_MAX_SPEED m/s を横軸にした 1D カラーランプ
 export function createSpeedRampTexture(
   stops: ColorStops = COLOR_SCHEMES.standard,

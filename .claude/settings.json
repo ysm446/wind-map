@@ -32,7 +32,8 @@
       "Bash(curl -sL --fail -o border-10m.json __TRACKED_VAR__/10m/cultural/ne_10m_admin_0_boundary_lines_land.json)",
       "PowerShell($env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-borders2.png\"; npx electron .; \\(Get-Item \"$env:TEMP\\\\windmap-borders2.png\" -ErrorAction SilentlyContinue\\).Length)",
       "PowerShell(npm run build; if \\($?\\) { $env:ELECTRON_RUN_AS_NODE = $null; $env:WINDMAP_SCREENSHOT = \"$env:TEMP\\\\windmap-dbg.png\"; npx electron .; Get-Content \"$env:TEMP\\\\windmap-dbg.png.txt\" })",
-      "PowerShell(npm run build)"
+      "PowerShell(npm run build)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

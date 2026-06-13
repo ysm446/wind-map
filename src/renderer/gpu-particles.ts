@@ -14,7 +14,12 @@
 import * as THREE from 'three';
 import { WindField } from './wind';
 import { type ColorStops } from './particles';
-import { createWindDataTexture, createSpeedRampTexture, RAMP_MAX_SPEED } from './wind-texture';
+import {
+  createWindDataTexture,
+  createSpeedRampTexture,
+  writeWindInterp,
+  RAMP_MAX_SPEED,
+} from './wind-texture';
 
 const BASE_DEG_PER_FRAME = 0.03; // 風速 1 m/s あたりの 1 フレーム移動量(度)
 const MOVING_FADE = 0.82; // カメラ操作中は軌跡を速く消してスミアを抑える
@@ -367,6 +372,14 @@ export class GpuParticleSystem {
     this.uWind.value = tex;
     this.uGrid.value.set(wind.lo1, wind.la1, wind.dx, wind.dy);
     this.uGridSize.value.set(wind.nx, wind.ny);
+  }
+
+  // 2 フレームを時間補間した風場をその場で反映する(再生の補間用)
+  setWindInterp(a: WindField, b: WindField, t: number): void {
+    if (!this.windTexture || this.uGridSize.value.x !== a.nx || this.uGridSize.value.y !== a.ny) {
+      this.setWind(a);
+    }
+    writeWindInterp(this.windTexture!, a, b, t);
   }
 
   // 毎フレーム、メインシーンの描画前に呼ぶ

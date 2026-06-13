@@ -153,9 +153,9 @@ input[type="range"]::-webkit-slider-runnable-track {
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -5.5px;
+  width: 11px;
+  height: 11px;
+  margin-top: -4px;
   border-radius: 50%;
   background: #9fb4d4;
   border: none;
@@ -398,6 +398,10 @@ input[type="text"]:focus-visible {
   height: 1px;
   background: rgba(255, 255, 255, 0.1);
   margin: 12px 0;
+}
+
+#db-player .check-label {
+  margin-bottom: 8px;
 }
 
 #db-build-status {

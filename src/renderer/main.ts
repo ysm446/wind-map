@@ -366,7 +366,13 @@ async function init(): Promise<void> {
     }
   }
 
-  // 右下の大きな日付表示。合成風場など有効日時のないデータでは消す
+  // 右下の大きな日付表示
+  function setDateDisplayIso(iso: string): void {
+    dateDisplayDate.textContent = iso.slice(0, 10);
+    dateDisplayTime.textContent = `${iso.slice(11, 16)} UTC`;
+  }
+
+  // フィールドの有効日時を表示する。合成風場など有効日時のないデータでは消す
   function updateDateDisplay(field: WindField): void {
     if (!field.refTime) {
       dateDisplayDate.textContent = '';
@@ -376,9 +382,13 @@ async function init(): Promise<void> {
     const valid = new Date(
       new Date(field.refTime).getTime() + (field.forecastTime ?? 0) * 3600_000,
     );
-    const iso = valid.toISOString();
-    dateDisplayDate.textContent = iso.slice(0, 10);
-    dateDisplayTime.textContent = `${iso.slice(11, 16)} UTC`;
+    setDateDisplayIso(valid.toISOString());
+  }
+
+  // フィールドの有効日時 (ms)。補間時刻の算出に使う
+  function fieldValidMs(field: WindField): number {
+    const ref = field.refTime ? new Date(field.refTime).getTime() : Date.now();
+    return ref + (field.forecastTime ?? 0) * 3600_000;
   }
 
   // 新しい風場の適用。粒子と軌跡は保ったまま風だけ差し替える
@@ -503,20 +513,26 @@ async function init(): Promise<void> {
   const dbInValue = document.getElementById('db-in-value')!;
   const dbOut = document.getElementById('db-out') as HTMLInputElement;
   const dbOutValue = document.getElementById('db-out-value')!;
+  const dbInterp = document.getElementById('db-interp') as HTMLInputElement;
   const dbLoop = document.getElementById('db-loop') as HTMLInputElement;
 
-  // 再生状態。frames は読み込み済みの風場をメモリに保持する
+  // 再生状態。frames は読み込み済みの風場をメモリに保持する。
+  // pos は連続位置(フレーム単位)で、補間時は小数部を 2 コマの混合率に使う。
   const player = {
     id: null as string | null,
     frames: [] as WindField[],
-    index: 0,
+    times: [] as number[], // 各フレームの有効日時 (ms)
+    pos: 0,
     playing: false,
     inPoint: 0,
     outPoint: 0,
     frameDuration: 0.5, // 秒/コマ
-    acc: 0,
+    appliedIndex: -1, // 離散再生で最後に適用したコマ(再確保を避けるため)
   };
   let lastPlayTime = 0;
+
+  // 補間は GPU パーティクル経路でのみ行う(CPU フォールバックは離散)
+  const canInterp = (): boolean => gpuParticles !== null && dbInterp.checked;
 
   const SOURCE_LABEL = { forecast: '予報', archive: 'アーカイブ' };
 
@@ -576,29 +592,51 @@ async function init(): Promise<void> {
     await refreshDbList();
   }
 
-  function rangeLabel(): string {
-    const total = player.frames.length;
-    return total ? `${player.index + 1}/${total}` : '';
+  // 現在の連続位置 (player.pos) を地球へ反映する。
+  // 補間 ON かつ小数位置なら隣接 2 コマを混ぜ、それ以外は最寄りコマを表示する。
+  function applyAtPos(): void {
+    const n = player.frames.length;
+    if (!n) return;
+    const pos = Math.max(player.inPoint, Math.min(player.outPoint, player.pos));
+    const i0 = Math.floor(pos);
+    const frac = pos - i0;
+
+    if (canInterp() && frac > 1e-3 && i0 + 1 <= player.outPoint) {
+      const a = player.frames[i0];
+      const b = player.frames[i0 + 1];
+      gpuParticles!.setWindInterp(a, b, frac);
+      overlay.setWindInterp(a, b, frac);
+      windField = a; // 粒子再構築時の基準(次フレームで補間が上書きする)
+      const tms = player.times[i0] + (player.times[i0 + 1] - player.times[i0]) * frac;
+      setDateDisplayIso(new Date(tms).toISOString());
+      player.appliedIndex = -1; // 離散へ戻ったとき必ず再適用させる
+    } else {
+      const i = Math.round(pos);
+      if (i !== player.appliedIndex) {
+        applyWind(player.frames[i]);
+        player.appliedIndex = i;
+      }
+    }
+
+    const nearest = Math.round(pos);
+    dbScrub.value = String(nearest);
+    dbFrameLabel.textContent = `${nearest + 1}/${n}`;
   }
 
-  // 現在のフレームを地球に反映する (風だけ差し替え、粒子と軌跡は保持)
+  // 指定コマへ移動して表示する (スクラブ・読込用)
   function setFrame(index: number): void {
     if (!player.frames.length) return;
-    const i = Math.max(0, Math.min(player.frames.length - 1, index));
-    player.index = i;
-    applyWind(player.frames[i]);
-    dbScrub.value = String(i);
-    dbFrameLabel.textContent = rangeLabel();
+    player.pos = Math.max(0, Math.min(player.frames.length - 1, index));
+    applyAtPos();
   }
 
   function setPlaying(on: boolean): void {
     player.playing = on && player.frames.length > 1;
     dbPlay.textContent = player.playing ? '⏸ 一時停止' : '▶ 再生';
     if (player.playing) {
-      player.acc = 0;
       lastPlayTime = 0;
       // 終端から再生開始したら先頭へ戻す
-      if (player.index >= player.outPoint) setFrame(player.inPoint);
+      if (player.pos >= player.outPoint) player.pos = player.inPoint;
     }
   }
 
@@ -621,9 +659,11 @@ async function init(): Promise<void> {
     }
     player.id = id;
     player.frames = frames;
+    player.times = frames.map(fieldValidMs);
     player.inPoint = 0;
     player.outPoint = frames.length - 1;
     player.playing = false;
+    player.appliedIndex = -1;
     const max = String(frames.length - 1);
     for (const slider of [dbScrub, dbIn, dbOut]) slider.max = max;
     dbScrub.value = '0';
@@ -640,21 +680,22 @@ async function init(): Promise<void> {
   // 再生の前進。アニメーションループから dt(秒) を渡して呼ぶ
   function advancePlayback(dt: number): void {
     if (!player.playing || player.frames.length < 2) return;
-    player.acc += dt;
-    while (player.acc >= player.frameDuration) {
-      player.acc -= player.frameDuration;
-      let next = player.index + 1;
-      if (next > player.outPoint) {
-        if (dbLoop.checked) {
-          next = player.inPoint;
-        } else {
-          setFrame(player.outPoint);
-          setPlaying(false);
-          return;
-        }
+    const span = player.outPoint - player.inPoint;
+    player.pos += dt / Math.max(0.01, player.frameDuration);
+    if (player.pos > player.outPoint) {
+      if (dbLoop.checked && span > 0) {
+        // 端数を持ち越して滑らかにループ(範囲を超えたら先頭へ丸める)
+        player.pos = player.inPoint + ((player.pos - player.inPoint) % span);
+      } else if (dbLoop.checked) {
+        player.pos = player.inPoint;
+      } else {
+        player.pos = player.outPoint;
+        applyAtPos();
+        setPlaying(false);
+        return;
       }
-      setFrame(next);
     }
+    applyAtPos();
   }
 
   // 出自に応じて入力欄を切り替える
@@ -744,6 +785,15 @@ async function init(): Promise<void> {
     setPlaying(false);
     setFrame(Number(dbScrub.value));
   });
+  dbInterp.addEventListener('change', () => {
+    player.appliedIndex = -1;
+    applyAtPos();
+  });
+  if (!gpuSupported) {
+    dbInterp.checked = false;
+    dbInterp.disabled = true;
+    dbInterp.closest('label')?.setAttribute('title', 'GPU パーティクル非対応環境では補間できません');
+  }
   dbSpeed.addEventListener('input', () => {
     player.frameDuration = Number(dbSpeed.value);
     dbSpeedValue.textContent = player.frameDuration.toFixed(2);
