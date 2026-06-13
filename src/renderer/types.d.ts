@@ -28,6 +28,7 @@ interface AppSettings {
   tz?: number; // 時刻表示のタイムゾーンオフセット (時間, UTC からのずれ)
   autoFetch?: boolean; // 起動時に最新データを自動取得するか
   showFps?: boolean; // FPS を画面右上に表示するか
+  showLegend?: boolean; // 左下の風速凡例を表示するか
   lang?: 'ja' | 'en'; // UI 言語
   colors?: ColorSettings;
 }

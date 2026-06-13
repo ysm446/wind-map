@@ -423,6 +423,49 @@ input[type="text"]:focus-visible {
   display: none;
 }
 
+/* 左下の風速カラースケール凡例 */
+#legend {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  width: 180px;
+  padding: 8px 10px;
+  background: rgba(14, 19, 28, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  user-select: none;
+  font-size: 11px;
+  color: #8b97a8;
+}
+
+#legend.hidden {
+  display: none;
+}
+
+#legend .legend-title {
+  margin-bottom: 5px;
+  color: #cdd6e4;
+}
+
+#legend .legend-bar {
+  height: 8px;
+  border-radius: 3px;
+}
+
+#legend .legend-scale {
+  position: relative;
+  height: 13px;
+  margin-top: 3px;
+}
+
+#legend .legend-scale span {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+}
+
 /* 右下の大きな日付表示(風データの有効日時)。
    Bahnschrift は Windows 標準の DIN 系バリアブルフォント */
 #date-display {

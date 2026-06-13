@@ -186,6 +186,10 @@ async function init(): Promise<void> {
   const tzSlider = document.getElementById('tz') as HTMLInputElement;
   const tzValue = document.getElementById('tz-value')!;
   const showFpsCheck = document.getElementById('show-fps') as HTMLInputElement;
+  const showLegendCheck = document.getElementById('show-legend') as HTMLInputElement;
+  const legendEl = document.getElementById('legend')!;
+  const legendBar = legendEl.querySelector<HTMLElement>('.legend-bar')!;
+  const legendScale = legendEl.querySelector<HTMLElement>('.legend-scale')!;
   const langSelect = document.getElementById('lang') as HTMLSelectElement;
 
   // 色設定の input 要素。キーは ColorSettings / DEFAULT_COLORS と対応する
@@ -241,6 +245,7 @@ async function init(): Promise<void> {
     }
     if (typeof s.autoFetch === 'boolean') autoFetchCheck.checked = s.autoFetch;
     if (typeof s.showFps === 'boolean') showFpsCheck.checked = s.showFps;
+    if (typeof s.showLegend === 'boolean') showLegendCheck.checked = s.showLegend;
     if (s.lang === 'ja' || s.lang === 'en') {
       setLang(s.lang);
       langSelect.value = s.lang;
@@ -277,6 +282,7 @@ async function init(): Promise<void> {
           tz: displayTz,
           autoFetch: autoFetchCheck.checked,
           showFps: showFpsCheck.checked,
+          showLegend: showLegendCheck.checked,
           lang: getLang(),
           colors: {
             coastline: colorInputs.coastline.value,
@@ -310,12 +316,30 @@ async function init(): Promise<void> {
     return COLOR_SCHEMES[schemeSelect.value] ?? COLOR_SCHEMES.standard;
   }
 
-  // 凡例のグラデーションは粒子と同じ配色ストップから生成して一致させる
-  function renderLegend(stops: ColorStops): void {
-    const bar = overlayDetail.querySelector<HTMLElement>('#speed-legend .bar')!;
-    bar.style.background = `linear-gradient(to right, ${stops
+  // 配色ストップから linear-gradient の CSS を作る(凡例の色を粒子と一致させる)
+  function gradientCss(stops: ColorStops): string {
+    return `linear-gradient(to right, ${stops
       .map(([s, [r, g, b]]) => `rgb(${r}, ${g}, ${b}) ${((s / RAMP_MAX_SPEED) * 100).toFixed(1)}%`)
       .join(', ')})`;
+  }
+
+  // オーバーレイ濃度欄の凡例(メニュー内)
+  function renderLegend(stops: ColorStops): void {
+    const bar = overlayDetail.querySelector<HTMLElement>('#speed-legend .bar')!;
+    bar.style.background = gradientCss(stops);
+  }
+
+  // 左下の風速カラースケール凡例(画面上)。目盛りは 0〜35 m/s。
+  function renderScreenLegend(stops: ColorStops): void {
+    legendBar.style.background = gradientCss(stops);
+    const ticks = [0, 10, 20, 30, RAMP_MAX_SPEED];
+    legendScale.innerHTML = ticks
+      .map((v, i) => {
+        const pct = (v / RAMP_MAX_SPEED) * 100;
+        const tf = i === 0 ? '0' : i === ticks.length - 1 ? '-100%' : '-50%';
+        return `<span style="left:${pct.toFixed(1)}%;transform:translateX(${tf})">${v}</span>`;
+      })
+      .join('');
   }
 
   // 配色プリセットを粒子・オーバーレイ・凡例へ反映する
@@ -325,6 +349,7 @@ async function init(): Promise<void> {
     if (cpuParticles) cpuParticles.colorStops = stops;
     overlay.setColorStops(stops);
     renderLegend(stops);
+    renderScreenLegend(stops);
   }
 
   // 地表テクスチャの再生成は重いので、ピッカー操作中は 150ms に 1 回へ間引く
@@ -569,6 +594,14 @@ async function init(): Promise<void> {
   syncFps();
   showFpsCheck.addEventListener('change', () => {
     syncFps();
+    scheduleSave();
+  });
+  function syncLegend(): void {
+    legendEl.classList.toggle('hidden', !showLegendCheck.checked);
+  }
+  syncLegend();
+  showLegendCheck.addEventListener('change', () => {
+    syncLegend();
     scheduleSave();
   });
   fetchBtn.addEventListener('click', () => {

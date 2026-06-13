@@ -25,6 +25,8 @@ const STRINGS: Record<string, { ja: string; en: string }> = {
   // 表示設定
   timezone: { ja: '時刻のタイムゾーン', en: 'Time zone' },
   showFps: { ja: 'FPS を表示する', en: 'Show FPS' },
+  showLegend: { ja: '風速の凡例を表示', en: 'Show wind speed legend' },
+  windSpeed: { ja: '風速 (m/s)', en: 'Wind speed (m/s)' },
   language: { ja: '言語', en: 'Language' },
   particleScheme: { ja: 'パーティクル配色', en: 'Particle colors' },
   schemeStandard: { ja: '標準', en: 'Standard' },
