@@ -14,6 +14,7 @@
 import * as THREE from 'three';
 import { WindField } from './wind';
 import { type ColorStops } from './particles';
+import { PROJECT_GLSL, MAX_MERC_LAT, MAX_MERC_Y } from './projection';
 import {
   createWindDataTexture,
   createSpeedRampTexture,
@@ -41,6 +42,7 @@ uniform vec4 uGrid;     // lo1, la1, dx, dy
 uniform vec2 uGridSize; // nx, ny
 uniform float uK;       // 度/フレーム per m/s
 uniform float uTime;
+uniform float uMorph;   // 地球儀 (0) ⇔ メルカトル平面 (1)
 varying vec2 vUv;
 
 float hash(vec2 p) {
@@ -65,13 +67,19 @@ void main() {
   lonlat.y += w.y * uK;
   lonlat.x = mod(lonlat.x + 180.0, 360.0) - 180.0;
 
-  if (age >= maxAge || abs(lonlat.y) > 85.0) {
+  if (age >= maxAge || abs(lonlat.y) > ${MAX_MERC_LAT.toFixed(1)}) {
     vec2 seed = vUv * 1.37 + fract(vec2(uTime * 0.1031, uTime * 0.0973));
     float r1 = hash(seed);
     float r2 = hash(seed + 19.19);
     float r3 = hash(seed + 47.47);
-    // 球面上で一様になるよう sin(lat) を一様サンプリングする
-    lonlat = vec2(r1 * 360.0 - 180.0, clamp(degrees(asin(r2 * 2.0 - 1.0)), -85.0, 85.0));
+    // 緯度分布は表示に合わせてブレンドする:
+    //   地球儀 = 球面上で一様 (sin(lat) を一様サンプリング)
+    //   平面   = メルカトル地図上で一様 (メルカトル Y を一様サンプリングし逆変換)
+    float u = r2 * 2.0 - 1.0;
+    float latSphere = degrees(asin(u));
+    float latMap = degrees(2.0 * atan(exp(u * ${MAX_MERC_Y.toFixed(6)})) - 1.5707963267948966);
+    float lat = clamp(mix(latSphere, latMap, uMorph), -${MAX_MERC_LAT.toFixed(1)}, ${MAX_MERC_LAT.toFixed(1)});
+    lonlat = vec2(r1 * 360.0 - 180.0, lat);
     age = 0.0;
     maxAge = 120.0 + 360.0 * r3;
   }
@@ -105,12 +113,15 @@ void main() {
 
 // 各頂点 = 1 粒子。position.xy に状態テクスチャの UV を入れてある
 const POINT_VS = /* glsl */ `
+${PROJECT_GLSL}
 uniform sampler2D uState;
 uniform sampler2D uWind;
 uniform vec4 uGrid;
 uniform vec2 uGridSize;
 uniform float uPointSize;
 uniform float uRadius;
+uniform float uMorph;
+uniform float uCenterLon; // 地図の中央経度。位置は表示経度 (実経度 - 中央経度) で計算する
 varying float vSpeed;
 varying float vLife;
 
@@ -126,11 +137,31 @@ void main() {
   // 出現・消滅が急に見えないよう、寿命の出入りで明るさを絞る
   vLife = clamp(min(st.z / 8.0, (st.w - st.z) / 24.0), 0.0, 1.0);
 
-  float phi = (st.x + 180.0) * 0.017453292519943295;
+  float dlon = windmapWrapLon(st.x - uCenterLon);
+  float phi = (dlon + 180.0) * 0.017453292519943295;
   float theta = (90.0 - st.y) * 0.017453292519943295;
   vec3 p = vec3(-cos(phi) * sin(theta), cos(theta), sin(phi) * sin(theta)) * uRadius;
+  p = windmapMorphPos(p, vec2(dlon, st.y), uRadius, uMorph);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   gl_PointSize = uPointSize;
+}
+`;
+
+// 蓄積バッファ内で裏側の粒子を隠す深度専用の地球 (モーフ対応)。
+// SphereGeometry の UV から経緯度を復元して地表と同じ形に変形する
+const DEPTH_VS = /* glsl */ `
+${PROJECT_GLSL}
+uniform float uMorph;
+void main() {
+  vec2 lonlat = vec2(uv.x * 360.0 - 180.0, uv.y * 180.0 - 90.0);
+  vec3 p = windmapMorphPos(position, lonlat, length(position), uMorph);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+}
+`;
+
+const DEPTH_FS = /* glsl */ `
+void main() {
+  gl_FragColor = vec4(0.0);
 }
 `;
 
@@ -180,6 +211,9 @@ export class GpuParticleSystem {
   private readonly uWind = { value: null as THREE.Texture | null };
   private readonly uGrid = { value: new THREE.Vector4() };
   private readonly uGridSize = { value: new THREE.Vector2() };
+  private readonly uMorph = { value: 0 }; // 地球儀 (0) ⇔ メルカトル平面 (1)
+  private readonly uCenterLon = { value: 0 }; // 地図の中央経度
+  private morphMoving = false; // モーフ・中央経度の変更中は軌跡を速く消してスミアを抑える
 
   private stateRead: THREE.WebGLRenderTarget;
   private stateWrite: THREE.WebGLRenderTarget;
@@ -211,20 +245,23 @@ export class GpuParticleSystem {
     stateSize: number, // 粒子数 = stateSize^2
     particleRadius: number,
     globeRadius: number,
+    initialMorph = 0, // 平面表示中の再構築でも密度が合うよう、初期分布にも反映する
   ) {
     this.renderer = renderer;
     this.rampTexture = createSpeedRampTexture();
+    this.uMorph.value = initialMorph;
 
-    // 初期状態: 一様分布 + 寿命をばらけさせる
+    // 初期状態: 一様分布 (UPDATE_FS の再配置と同じ緯度分布) + 寿命をばらけさせる
     const count = stateSize * stateSize;
     const init = new Float32Array(count * 4);
     for (let i = 0; i < count; i++) {
       const maxAge = 120 + Math.random() * 360;
+      const u = Math.random() * 2 - 1;
+      const latSphere = (Math.asin(u) * 180) / Math.PI;
+      const latMap = ((2 * Math.atan(Math.exp(u * MAX_MERC_Y)) - Math.PI / 2) * 180) / Math.PI;
+      const lat = latSphere + (latMap - latSphere) * initialMorph;
       init[i * 4] = Math.random() * 360 - 180;
-      init[i * 4 + 1] = Math.max(
-        -85,
-        Math.min(85, (Math.asin(Math.random() * 2 - 1) * 180) / Math.PI),
-      );
+      init[i * 4 + 1] = Math.max(-MAX_MERC_LAT, Math.min(MAX_MERC_LAT, lat));
       init[i * 4 + 2] = Math.random() * maxAge;
       init[i * 4 + 3] = maxAge;
     }
@@ -253,6 +290,7 @@ export class GpuParticleSystem {
         uGridSize: this.uGridSize,
         uK: { value: BASE_DEG_PER_FRAME },
         uTime: { value: 0 },
+        uMorph: this.uMorph,
       },
       vertexShader: QUAD_VS,
       fragmentShader: UPDATE_FS,
@@ -304,6 +342,8 @@ export class GpuParticleSystem {
         uRamp: { value: this.rampTexture },
         uPointSize: { value: Math.max(1, renderer.getPixelRatio()) },
         uRadius: { value: particleRadius },
+        uMorph: this.uMorph,
+        uCenterLon: this.uCenterLon,
       },
       vertexShader: POINT_VS,
       fragmentShader: POINT_FS,
@@ -317,9 +357,15 @@ export class GpuParticleSystem {
     points.renderOrder = 1;
 
     // 蓄積バッファ内で裏側を隠すための深度専用の地球
+    // heightSegments はメルカトルモーフのクランプ位置 (±85°) に頂点行が乗るよう 36 の倍数
     const depthGlobe = new THREE.Mesh(
-      new THREE.SphereGeometry(globeRadius, 64, 32),
-      new THREE.MeshBasicMaterial({ colorWrite: false }),
+      new THREE.SphereGeometry(globeRadius, 64, 36),
+      new THREE.ShaderMaterial({
+        uniforms: { uMorph: this.uMorph },
+        vertexShader: DEPTH_VS,
+        fragmentShader: DEPTH_FS,
+        colorWrite: false,
+      }),
     );
     depthGlobe.renderOrder = 0;
 
@@ -365,6 +411,18 @@ export class GpuParticleSystem {
     this.pointsMat.uniforms.uRamp.value = tex;
   }
 
+  // 地球儀 (0) ⇔ メルカトル平面 (1) のモーフ量
+  setMorph(morph: number): void {
+    if (Math.abs(morph - this.uMorph.value) > 1e-4) this.morphMoving = true;
+    this.uMorph.value = morph;
+  }
+
+  // 地図の中央経度。全粒子の表示位置が変わるので軌跡もリセット扱いにする
+  setCenterLon(centerLon: number): void {
+    if (centerLon !== this.uCenterLon.value) this.morphMoving = true;
+    this.uCenterLon.value = centerLon;
+  }
+
   setWind(wind: WindField): void {
     const tex = createWindDataTexture(wind);
     this.windTexture?.dispose();
@@ -408,11 +466,11 @@ export class GpuParticleSystem {
     camera.updateMatrixWorld();
     const e1 = this.prevCamMatrix.elements;
     const e2 = camera.matrixWorld.elements;
-    let moving = false;
-    for (let i = 0; i < 16; i++) {
+    let moving = this.morphMoving; // モーフ中も点が動くのでカメラ移動と同じ扱い
+    this.morphMoving = false;
+    for (let i = 0; i < 16 && !moving; i++) {
       if (Math.abs(e1[i] - e2[i]) > 1e-4) {
         moving = true;
-        break;
       }
     }
     this.prevCamMatrix.copy(camera.matrixWorld);

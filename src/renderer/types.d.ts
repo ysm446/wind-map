@@ -25,6 +25,8 @@ interface AppSettings {
   overlay?: boolean; // 風速カラーオーバーレイの表示
   overlayOpacity?: number;
   particleScheme?: string; // COLOR_SCHEMES のキー (standard / viridis / turbo)
+  projection?: 'globe' | 'map'; // 地球儀 / メルカトル平面
+  mapCenterLon?: number; // 地図の中央経度 (度, -180〜180)
   tz?: number; // 時刻表示のタイムゾーンオフセット (時間, UTC からのずれ)
   autoFetch?: boolean; // 起動時に最新データを自動取得するか
   showFps?: boolean; // FPS を画面右上に表示するか

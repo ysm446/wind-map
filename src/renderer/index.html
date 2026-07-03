@@ -29,6 +29,19 @@
     <div id="panel">
       <h1>Wind Map</h1>
       <div class="meta" id="data-source" data-i18n="dataLoading">データ読み込み中…</div>
+      <div class="control">
+        <label class="check-label">
+          <input id="proj-map" type="checkbox" />
+          <span data-i18n="projMap">2D マップ(メルカトル図法)</span>
+        </label>
+      </div>
+      <div class="control">
+        <div class="control-label">
+          <span data-i18n="centerLon">地図の中央経度</span>
+          <span class="value" id="center-lon-value">0°</span>
+        </div>
+        <input id="center-lon" type="range" min="-180" max="180" step="15" value="0" />
+      </div>
       <details class="section">
         <summary data-i18n="secParticles">パーティクル</summary>
         <div class="control">

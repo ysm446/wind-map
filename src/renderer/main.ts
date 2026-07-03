@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Globe, createCoastlines, createBorders, lonLatToVector3 } from './globe';
+import { MAP_CAMERA_DIST } from './projection';
 import { WindField, makeSyntheticWind } from './wind';
 import { ParticleSystem, COLOR_SCHEMES, type ColorStops } from './particles';
 import { GpuParticleSystem } from './gpu-particles';
@@ -33,6 +34,11 @@ const DEFAULT_COLORS: Required<ColorSettings> = {
 
 const GLOBE_RADIUS = 1;
 const PARTICLE_RADIUS = 1.004; // 地表より少し浮かせて Z ファイティングを避ける
+
+// ズーム範囲。下限はカメラの near (0.1) を切らない程度に近づける
+const GLOBE_MIN_DIST = 1.2; // 地球儀モード (地表から 0.2)
+const MAP_MIN_DIST = 0.3; // 平面モード (地図面から 0.3)
+const MAX_DIST = 8;
 
 // データソースの種別キー → i18n キー
 const SOURCE_KEY: Record<string, string> = {
@@ -115,8 +121,8 @@ async function init(): Promise<void> {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = false;
-  controls.minDistance = 1.4;
-  controls.maxDistance = 8;
+  controls.minDistance = GLOBE_MIN_DIST;
+  controls.maxDistance = MAX_DIST;
   controls.rotateSpeed = 0.5;
 
   const globe = new Globe(
@@ -185,6 +191,9 @@ async function init(): Promise<void> {
   const colorsResetBtn = document.getElementById('colors-reset') as HTMLButtonElement;
   const tzSlider = document.getElementById('tz') as HTMLInputElement;
   const tzValue = document.getElementById('tz-value')!;
+  const projMapCheck = document.getElementById('proj-map') as HTMLInputElement;
+  const centerLonSlider = document.getElementById('center-lon') as HTMLInputElement;
+  const centerLonValue = document.getElementById('center-lon-value')!;
   const showFpsCheck = document.getElementById('show-fps') as HTMLInputElement;
   const showLegendCheck = document.getElementById('show-legend') as HTMLInputElement;
   const legendEl = document.getElementById('legend')!;
@@ -243,6 +252,11 @@ async function init(): Promise<void> {
       displayTz = Math.min(14, Math.max(-12, Math.round(s.tz)));
       tzSlider.value = String(displayTz);
     }
+    if (s.projection === 'map') projMapCheck.checked = true;
+    if (typeof s.mapCenterLon === 'number' && Number.isFinite(s.mapCenterLon)) {
+      const v = Math.min(180, Math.max(-180, Math.round(s.mapCenterLon / 15) * 15));
+      centerLonSlider.value = String(v);
+    }
     if (typeof s.autoFetch === 'boolean') autoFetchCheck.checked = s.autoFetch;
     if (typeof s.showFps === 'boolean') showFpsCheck.checked = s.showFps;
     if (typeof s.showLegend === 'boolean') showLegendCheck.checked = s.showLegend;
@@ -279,6 +293,8 @@ async function init(): Promise<void> {
           overlay: overlayCheck.checked,
           overlayOpacity: Number(overlayOpacity.value),
           particleScheme: schemeSelect.value,
+          projection: projMapCheck.checked ? 'map' : 'globe',
+          mapCenterLon: Number(centerLonSlider.value),
           tz: displayTz,
           autoFetch: autoFetchCheck.checked,
           showFps: showFpsCheck.checked,
@@ -303,10 +319,118 @@ async function init(): Promise<void> {
 
   applySettings(await window.windApi.getSettings().catch(() => null));
 
-  // 起動時、設定タイムゾーンに対応する経度 (オフセット×15°) を正面へ向ける。
-  // 例: UTC+9 → 東経135° (日本付近)。緯度は既定の少し見下ろす画角のまま。
-  {
-    const dir = lonLatToVector3(displayTz * 15, 0, 1);
+  // --- 投影モード (地球儀 ⇔ メルカトル平面のモーフ) ---
+  const MORPH_DURATION = 1.4; // モーフにかける秒数
+  const proj = { value: 0, target: 0 }; // 0=地球儀, 1=平面
+  // モーフ中のカメラ移動先。null なら遷移中ではない
+  let camAnim: { pos: THREE.Vector3; tgt: THREE.Vector3 } | null = null;
+
+  // smoothstep で緩急をつけたモーフ量
+  const easedMorph = (): number => proj.value * proj.value * (3 - 2 * proj.value);
+
+  function applyMorph(): void {
+    const e = easedMorph();
+    globe.setMorph(e);
+    coastlines.setMorph(e);
+    borders.setMorph(e);
+    overlay.setMorph(e);
+    if (gpuParticles) gpuParticles.setMorph(e);
+    if (cpuParticles) cpuParticles.morph = e;
+  }
+
+  // 遷移完了後の OrbitControls 設定。平面では回転を無効化し、左ドラッグをパンにする
+  function applyProjControls(): void {
+    const map = proj.target === 1;
+    controls.enableRotate = !map;
+    controls.enablePan = map;
+    controls.screenSpacePanning = true;
+    controls.minDistance = map ? MAP_MIN_DIST : GLOBE_MIN_DIST;
+    controls.mouseButtons.LEFT = map ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    controls.touches.ONE = map ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+    controls.enabled = true;
+  }
+
+  function setProjection(map: boolean): void {
+    proj.target = map ? 1 : 0;
+    if (map) {
+      // 地図の中心 (表示経度0° = +X 方向) の正面、全体が収まる距離へ
+      camAnim = { pos: new THREE.Vector3(MAP_CAMERA_DIST, 0, 0), tgt: new THREE.Vector3() };
+    } else {
+      // 現在の視線方向を保ったまま、地球儀の距離レンジに収めて戻る
+      const dist = Math.min(MAX_DIST, Math.max(GLOBE_MIN_DIST, camera.position.length()));
+      camAnim = {
+        pos: camera.position.clone().normalize().multiplyScalar(dist),
+        tgt: new THREE.Vector3(),
+      };
+    }
+    controls.enabled = false; // 遷移中は手動でカメラを動かす
+  }
+
+  projMapCheck.addEventListener('change', () => {
+    setProjection(projMapCheck.checked);
+    scheduleSave();
+  });
+
+  // --- 地図の中央経度 ---
+  const Y_AXIS = new THREE.Vector3(0, 1, 0);
+  let appliedCenterLon = 0;
+
+  // "0°" / "135°E" / "90°W" / "180°"
+  function centerLonLabel(v: number): string {
+    if (v === 0) return '0°';
+    if (v === 180 || v === -180) return '180°';
+    return v > 0 ? `${v}°E` : `${-v}°W`;
+  }
+
+  // 中央経度を全描画要素へ反映する。描画は「表示経度 = 実経度 - 中央経度」の空間で
+  // 行われるため、地球儀は回転して見えるだけで、メルカトルの切れ目が
+  // ジオメトリの継ぎ目 (表示経度 ±180°) に載ったまま任意の位置で切れる
+  function applyCenterLonNow(rotateCamera: boolean): void {
+    const c = Number(centerLonSlider.value);
+    if (c === appliedCenterLon) return;
+    const delta = c - appliedCenterLon;
+    appliedCenterLon = c;
+    globe.setCenterLon(c);
+    coastlines.setCenterLon(c);
+    borders.setCenterLon(c);
+    overlay.setCenterLon(c);
+    if (gpuParticles) gpuParticles.setCenterLon(c);
+    if (cpuParticles) cpuParticles.centerLon = c;
+    // 地球儀モードでは表示空間の回転に合わせてカメラも回し、見た目を変えない
+    if (rotateCamera && proj.target === 0 && !camAnim) {
+      camera.position.applyAxisAngle(Y_AXIS, (-delta * Math.PI) / 180);
+    }
+  }
+
+  // テクスチャ再生成・ライン再構築を伴うので、スライダー操作中は 200ms に 1 回へ間引く
+  let centerLonTimer: number | undefined;
+  centerLonSlider.addEventListener('input', () => {
+    centerLonValue.textContent = centerLonLabel(Number(centerLonSlider.value));
+    if (centerLonTimer === undefined) {
+      centerLonTimer = window.setTimeout(() => {
+        centerLonTimer = undefined;
+        applyCenterLonNow(true);
+      }, 200);
+    }
+    scheduleSave();
+  });
+
+  // 起動時の反映 (カメラはまだ配置前なので回さない)
+  centerLonValue.textContent = centerLonLabel(Number(centerLonSlider.value));
+  applyCenterLonNow(false);
+
+  if (projMapCheck.checked) {
+    // 保存済み設定が平面なら、モーフ済みの状態から開始する
+    proj.value = proj.target = 1;
+    applyMorph();
+    camera.position.set(MAP_CAMERA_DIST, 0, 0);
+    controls.update();
+    applyProjControls();
+  } else {
+    // 起動時、設定タイムゾーンに対応する経度 (オフセット×15°) を正面へ向ける。
+    // 例: UTC+9 → 東経135° (日本付近)。緯度は既定の少し見下ろす画角のまま。
+    // 描画は表示経度空間なので中央経度ぶんを差し引く
+    const dir = lonLatToVector3(displayTz * 15 - appliedCenterLon, 0, 1);
     const r = 3.2;
     camera.position.set(dir.x * r, 0.8, dir.z * r);
     controls.update();
@@ -434,11 +558,13 @@ async function init(): Promise<void> {
         Number(countSelect.value),
         PARTICLE_RADIUS,
         GLOBE_RADIUS,
+        easedMorph(),
       );
       gpuParticles.speedFactor = Number(speedSlider.value);
       gpuParticles.trailFade = trailFadeFromSlider();
       gpuParticles.brightness = Number(brightnessSlider.value);
       gpuParticles.setColorStops(currentStops());
+      gpuParticles.setCenterLon(appliedCenterLon);
     } else {
       // GPU 非対応環境では CPU 移流(粒子数固定)にフォールバック。
       // 軌跡は頂点数に直結するため CPU では 64 点までに抑える
@@ -451,6 +577,8 @@ async function init(): Promise<void> {
       cpuParticles.speedFactor = Number(speedSlider.value);
       cpuParticles.brightness = Number(brightnessSlider.value);
       cpuParticles.colorStops = currentStops();
+      cpuParticles.morph = easedMorph();
+      cpuParticles.centerLon = appliedCenterLon;
       scene.add(cpuParticles.object3d);
     }
   }
@@ -1117,18 +1245,47 @@ async function init(): Promise<void> {
     h: window.innerHeight,
     dpr: window.devicePixelRatio,
     dist: controls.getDistance(),
+    morph: proj.value,
+    camPos: camera.position.toArray(),
+    camTarget: controls.target.toArray(),
   });
 
   let frames = 0;
   let lastFpsTime = performance.now();
+  let lastFrameTime = 0;
 
   renderer.setAnimationLoop((time: number) => {
+    const dtSec = lastFrameTime === 0 ? 0.016 : Math.min(0.1, (time - lastFrameTime) / 1000);
+    lastFrameTime = time;
     if (player.playing) {
       if (lastPlayTime === 0) lastPlayTime = time;
       advancePlayback((time - lastPlayTime) / 1000);
       lastPlayTime = time;
     }
-    controls.update();
+
+    // 投影モーフの遷移。遷移中は OrbitControls を止めて手動でカメラを寄せる
+    // (OrbitControls.update は内部の球面座標からカメラ位置を毎回設定し直すため)
+    if (proj.value !== proj.target || camAnim) {
+      const step = dtSec / MORPH_DURATION;
+      proj.value += Math.max(-step, Math.min(step, proj.target - proj.value));
+      if (Math.abs(proj.value - proj.target) < 1e-3) proj.value = proj.target;
+      applyMorph();
+      if (camAnim) {
+        const k = 1 - Math.exp(-dtSec * 3);
+        camera.position.lerp(camAnim.pos, k);
+        controls.target.lerp(camAnim.tgt, k);
+        camera.lookAt(controls.target);
+        if (proj.value === proj.target && camera.position.distanceTo(camAnim.pos) < 0.01) {
+          camera.position.copy(camAnim.pos);
+          controls.target.copy(camAnim.tgt);
+          camera.lookAt(controls.target);
+          camAnim = null;
+          applyProjControls();
+        }
+      }
+    } else {
+      controls.update();
+    }
     coastlines.update(controls.getDistance());
     borders.update(controls.getDistance());
     if (gpuParticles) gpuParticles.update(camera);

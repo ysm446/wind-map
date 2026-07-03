@@ -23,6 +23,8 @@ const STRINGS: Record<string, { ja: string; en: string }> = {
   overlayOpacity: { ja: 'オーバーレイ濃度', en: 'Overlay opacity' },
 
   // 表示設定
+  projMap: { ja: '2D マップ(メルカトル図法)', en: '2D map (Mercator)' },
+  centerLon: { ja: '地図の中央経度', en: 'Map center longitude' },
   timezone: { ja: '時刻のタイムゾーン', en: 'Time zone' },
   showFps: { ja: 'FPS を表示する', en: 'Show FPS' },
   showLegend: { ja: '風速の凡例を表示', en: 'Show wind speed legend' },

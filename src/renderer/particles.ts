@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WindField } from './wind';
 import { lonLatToVector3 } from './globe';
+import { lonLatToPlane, wrapLon, MAX_MERC_Y } from './projection';
 
 const BASE_DEG_PER_FRAME = 0.03; // 風速 1 m/s あたりの 1 フレーム移動量(度)
 const MAX_LAT = 85; // 極近傍は移流が破綻するためリセットする
@@ -79,6 +80,8 @@ export class ParticleSystem {
   speedFactor = 1.0;
   brightness = 1.0;
   colorStops: ColorStops = COLOR_SCHEMES.standard;
+  morph = 0; // 地球儀 (0) ⇔ メルカトル平面 (1)
+  centerLon = 0; // 地図の中央経度
 
   private readonly count: number;
   private readonly radius: number;
@@ -89,10 +92,14 @@ export class ParticleSystem {
   private readonly ages: Float32Array;
   private readonly maxAges: Float32Array;
   private readonly speeds: Float32Array;
-  private readonly trails: Float32Array; // count * TRAIL * 3
+  private readonly trails: Float32Array; // 投影済み座標 count * TRAIL * 3
+  private readonly trailLonLats: Float32Array; // 経緯度の履歴 count * TRAIL * 2
+  private lastMorph = 0; // morph / centerLon が動いた次のフレームで軌跡全体を再投影する
+  private lastCenterLon = 0;
   private readonly positionAttr: THREE.BufferAttribute;
   private readonly colorAttr: THREE.BufferAttribute;
   private readonly tmpVec = new THREE.Vector3();
+  private readonly tmpPlane = new THREE.Vector3();
 
   constructor(count: number, radius: number, wind: WindField, trailLen = 16) {
     const TRAIL = Math.max(2, trailLen);
@@ -106,6 +113,7 @@ export class ParticleSystem {
     this.maxAges = new Float32Array(count);
     this.speeds = new Float32Array(count);
     this.trails = new Float32Array(count * TRAIL * 3);
+    this.trailLonLats = new Float32Array(count * TRAIL * 2);
 
     const segments = count * (TRAIL - 1);
     const positions = new Float32Array(segments * 2 * 3);
@@ -135,22 +143,38 @@ export class ParticleSystem {
     for (let i = 0; i < this.count; i++) this.respawn(i);
   }
 
+  // 現在のモーフ量・中央経度で経緯度をワールド座標へ投影する (表示経度で計算)
+  private project(lon: number, lat: number, out: THREE.Vector3): void {
+    const dlon = wrapLon(lon - this.centerLon);
+    lonLatToVector3(dlon, lat, this.radius, out);
+    if (this.morph > 0) {
+      lonLatToPlane(dlon, lat, this.radius, this.tmpPlane);
+      out.lerp(this.tmpPlane, this.morph);
+    }
+  }
+
   private respawn(i: number): void {
     const TRAIL = this.trailLen;
-    // 球面上で一様になるよう sin(lat) を一様サンプリングする
-    const lat = (Math.asin(Math.random() * 2 - 1) * 180) / Math.PI;
+    // 緯度分布は表示に合わせてブレンドする (球面上で一様 ⇔ メルカトル地図上で一様)
+    const u = Math.random() * 2 - 1;
+    const latSphere = (Math.asin(u) * 180) / Math.PI;
+    const latMap = ((2 * Math.atan(Math.exp(u * MAX_MERC_Y)) - Math.PI / 2) * 180) / Math.PI;
+    const lat = latSphere + (latMap - latSphere) * this.morph;
     const lon = Math.random() * 360 - 180;
     this.lons[i] = lon;
     this.lats[i] = Math.max(-MAX_LAT, Math.min(MAX_LAT, lat));
     this.ages[i] = 0;
     this.maxAges[i] = 80 + Math.random() * 120;
     this.speeds[i] = 0;
-    lonLatToVector3(this.lons[i], this.lats[i], this.radius, this.tmpVec);
+    this.project(this.lons[i], this.lats[i], this.tmpVec);
     for (let k = 0; k < TRAIL; k++) {
       const base = (i * TRAIL + k) * 3;
       this.trails[base] = this.tmpVec.x;
       this.trails[base + 1] = this.tmpVec.y;
       this.trails[base + 2] = this.tmpVec.z;
+      const lbase = (i * TRAIL + k) * 2;
+      this.trailLonLats[lbase] = this.lons[i];
+      this.trailLonLats[lbase + 1] = this.lats[i];
     }
   }
 
@@ -158,10 +182,32 @@ export class ParticleSystem {
     const TRAIL = this.trailLen;
     const positions = this.positionAttr.array as Float32Array;
     const colors = this.colorAttr.array as Float32Array;
+    // モーフ・中央経度の変更中は投影が変わるので、蓄積済みの軌跡もすべて投影し直す
+    const reproject = this.morph !== this.lastMorph || this.centerLon !== this.lastCenterLon;
+    this.lastMorph = this.morph;
+    this.lastCenterLon = this.centerLon;
 
     for (let i = 0; i < this.count; i++) {
       const w = this.wind.sample(this.lons[i], this.lats[i]);
-      if (!w || this.ages[i] > this.maxAges[i] || Math.abs(this.lats[i]) > MAX_LAT) {
+      let wrapped = false;
+      if (w) {
+        const k = BASE_DEG_PER_FRAME * this.speedFactor;
+        const cosLat = Math.max(
+          0.05,
+          Math.cos((this.lats[i] * Math.PI) / 180),
+        );
+        const lon = this.lons[i] + (w.u * k) / cosLat;
+        // 地図の切れ目 (表示経度 ±180°) をまたいだかで判定する
+        wrapped =
+          Math.abs(wrapLon(lon - this.centerLon) - wrapLon(this.lons[i] - this.centerLon)) > 180;
+      }
+      // 平面表示中に地図の切れ目をまたぐと軌跡が地図を横断してしまうのでリセットする
+      if (
+        !w ||
+        this.ages[i] > this.maxAges[i] ||
+        Math.abs(this.lats[i]) > MAX_LAT ||
+        (wrapped && this.morph > 0)
+      ) {
         this.respawn(i);
       } else {
         const k = BASE_DEG_PER_FRAME * this.speedFactor;
@@ -180,11 +226,27 @@ export class ParticleSystem {
         // 軌跡を 1 つずらして先頭に現在位置を入れる
         const trailBase = i * TRAIL * 3;
         this.trails.copyWithin(trailBase, trailBase + 3, trailBase + TRAIL * 3);
-        lonLatToVector3(this.lons[i], this.lats[i], this.radius, this.tmpVec);
+        const lonlatBase = i * TRAIL * 2;
+        this.trailLonLats.copyWithin(lonlatBase, lonlatBase + 2, lonlatBase + TRAIL * 2);
+        this.project(this.lons[i], this.lats[i], this.tmpVec);
         const head = trailBase + (TRAIL - 1) * 3;
         this.trails[head] = this.tmpVec.x;
         this.trails[head + 1] = this.tmpVec.y;
         this.trails[head + 2] = this.tmpVec.z;
+        const lhead = lonlatBase + (TRAIL - 1) * 2;
+        this.trailLonLats[lhead] = this.lons[i];
+        this.trailLonLats[lhead + 1] = this.lats[i];
+      }
+
+      if (reproject) {
+        for (let k = 0; k < TRAIL; k++) {
+          const lbase = (i * TRAIL + k) * 2;
+          this.project(this.trailLonLats[lbase], this.trailLonLats[lbase + 1], this.tmpVec);
+          const base = (i * TRAIL + k) * 3;
+          this.trails[base] = this.tmpVec.x;
+          this.trails[base + 1] = this.tmpVec.y;
+          this.trails[base + 2] = this.tmpVec.z;
+        }
       }
 
       // 軌跡をラインセグメント列として書き出す(古いほど暗く)

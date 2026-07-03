@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { WindField } from './wind';
 import { type ColorStops } from './particles';
+import { PROJECT_GLSL } from './projection';
 import {
   createWindDataTexture,
   createSpeedRampTexture,
@@ -15,10 +16,14 @@ import {
 } from './wind-texture';
 
 const VS = /* glsl */ `
+${PROJECT_GLSL}
+uniform float uMorph;
 varying vec2 vUv;
 void main() {
   vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vec2 lonlat = vec2(uv.x * 360.0 - 180.0, uv.y * 180.0 - 90.0);
+  vec3 p = windmapMorphPos(position, lonlat, length(position), uMorph);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }
 `;
 
@@ -29,11 +34,12 @@ uniform sampler2D uRamp;
 uniform vec4 uGrid;     // lo1, la1, dx, dy
 uniform vec2 uGridSize; // nx, ny
 uniform float uOpacity;
+uniform float uCenterLon; // 地図の中央経度 (UV は表示経度なので実経度に戻す)
 varying vec2 vUv;
 
 void main() {
-  // SphereGeometry の UV (u=0 が lon=-180、v=1 が lat=90) を経緯度へ戻す
-  float lon = vUv.x * 360.0 - 180.0;
+  // SphereGeometry の UV (u=0 が表示経度 -180、v=1 が lat=90) を経緯度へ戻す
+  float lon = vUv.x * 360.0 - 180.0 + uCenterLon;
   float lat = vUv.y * 180.0 - 90.0;
   float c = mod(lon - uGrid.x, 360.0) / uGrid.z;
   float r = (uGrid.y - lat) / uGrid.w;
@@ -60,13 +66,16 @@ export class SpeedOverlay {
         uGrid: { value: new THREE.Vector4(0, 90, 1, 1) },
         uGridSize: { value: new THREE.Vector2(1, 1) },
         uOpacity: { value: 0.3 },
+        uMorph: { value: 0 },
+        uCenterLon: { value: 0 },
       },
       vertexShader: VS,
       fragmentShader: FS,
       transparent: true,
       depthWrite: false,
     });
-    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 96, 48), this.material);
+    // heightSegments はメルカトルモーフのクランプ位置 (±85°) に頂点行が乗るよう 36 の倍数
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 96, 72), this.material);
     this.mesh.visible = false;
   }
 
@@ -103,6 +112,16 @@ export class SpeedOverlay {
 
   setOpacity(opacity: number): void {
     this.material.uniforms.uOpacity.value = opacity;
+  }
+
+  // 地球儀 (0) ⇔ メルカトル平面 (1) のモーフ量
+  setMorph(morph: number): void {
+    this.material.uniforms.uMorph.value = morph;
+  }
+
+  // 地図の中央経度
+  setCenterLon(centerLon: number): void {
+    this.material.uniforms.uCenterLon.value = centerLon;
   }
 
   // 風データ未着のうちは真っ黒な球になるので、テクスチャが揃うまで隠す
