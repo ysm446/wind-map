@@ -27,6 +27,8 @@ interface AppSettings {
   particleScheme?: string; // COLOR_SCHEMES のキー (standard / viridis / turbo)
   projection?: 'globe' | 'map'; // 地球儀 / メルカトル平面
   mapCenterLon?: number; // 地図の中央経度 (度, -180〜180)
+  panelCollapsed?: boolean; // 左上メニューをタイトルバーだけに折りたたむか
+  panelSection?: string; // メニューで選択中のセクション (particles / overlay / ...)
   tz?: number; // 時刻表示のタイムゾーンオフセット (時間, UTC からのずれ)
   autoFetch?: boolean; // 起動時に最新データを自動取得するか
   showFps?: boolean; // FPS を画面右上に表示するか
@@ -89,6 +91,7 @@ interface BuildProgress {
   current: number;
   total: number;
   saved: number;
+  cancelled?: boolean; // ユーザー操作で中断された (取得済みフレームは保存される)
   message?: string;
 }
 
@@ -97,6 +100,7 @@ interface Window {
     getWindData(): Promise<WindApiResult | null>;
     fetchWind(forecastHour: number): Promise<WindApiResult>;
     fetchArchiveWind(time: string): Promise<WindApiResult>;
+    cancelFetch(): Promise<void>;
     getSettings(): Promise<AppSettings | null>;
     saveSettings(settings: AppSettings): Promise<void>;
     captureScreenshot(): Promise<string>;

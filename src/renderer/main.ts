@@ -1,7 +1,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Globe, createCoastlines, createBorders, lonLatToVector3 } from './globe';
-import { MAP_CAMERA_DIST } from './projection';
+import {
+  MAP_CAMERA_DIST,
+  MAP_SCALE,
+  MAX_MERC_LAT,
+  lonLatToPlane,
+  wrapLon,
+} from './projection';
 import { WindField, makeSyntheticWind } from './wind';
 import { ParticleSystem, COLOR_SCHEMES, type ColorStops } from './particles';
 import { GpuParticleSystem } from './gpu-particles';
@@ -14,6 +20,7 @@ import {
   applyStaticI18n,
   tBuildRunning,
   tBuildDone,
+  tBuildCancelled,
   tConfirmDelete,
   type Lang,
 } from './i18n';
@@ -191,7 +198,7 @@ async function init(): Promise<void> {
   const colorsResetBtn = document.getElementById('colors-reset') as HTMLButtonElement;
   const tzSlider = document.getElementById('tz') as HTMLInputElement;
   const tzValue = document.getElementById('tz-value')!;
-  const projMapCheck = document.getElementById('proj-map') as HTMLInputElement;
+  const projSelect = document.getElementById('proj-select') as HTMLSelectElement;
   const centerLonSlider = document.getElementById('center-lon') as HTMLInputElement;
   const centerLonValue = document.getElementById('center-lon-value')!;
   const showFpsCheck = document.getElementById('show-fps') as HTMLInputElement;
@@ -215,6 +222,27 @@ async function init(): Promise<void> {
   } as const;
   const coastOpInput = colorEl('col-coast-op');
   const borderOpInput = colorEl('col-border-op');
+
+  // 左ナビでセクションを切り替える (右ペインに選択中セクションだけ表示)
+  const navButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('#section-nav .nav-item'),
+  );
+  function selectSection(key: string): void {
+    if (!navButtons.some((b) => b.dataset.section === key)) return;
+    for (const b of navButtons) b.classList.toggle('active', b.dataset.section === key);
+    document.querySelectorAll<HTMLElement>('#section-panes .pane').forEach((p) => {
+      p.classList.toggle('active', p.id === `pane-${key}`);
+    });
+  }
+  function activeSection(): string {
+    return navButtons.find((b) => b.classList.contains('active'))?.dataset.section ?? 'appearance';
+  }
+  for (const b of navButtons) {
+    b.addEventListener('click', () => {
+      selectSection(b.dataset.section!);
+      scheduleSave();
+    });
+  }
 
   // 保存済みの UI 設定 (data/settings.json) を起動時に反映する
   function applySettings(s: AppSettings | null): void {
@@ -252,7 +280,11 @@ async function init(): Promise<void> {
       displayTz = Math.min(14, Math.max(-12, Math.round(s.tz)));
       tzSlider.value = String(displayTz);
     }
-    if (s.projection === 'map') projMapCheck.checked = true;
+    if (s.projection === 'map') projSelect.value = 'map';
+    if (s.panelCollapsed === true) {
+      document.getElementById('panel')!.classList.add('collapsed');
+    }
+    if (typeof s.panelSection === 'string') selectSection(s.panelSection);
     if (typeof s.mapCenterLon === 'number' && Number.isFinite(s.mapCenterLon)) {
       const v = Math.min(180, Math.max(-180, Math.round(s.mapCenterLon / 15) * 15));
       centerLonSlider.value = String(v);
@@ -293,8 +325,10 @@ async function init(): Promise<void> {
           overlay: overlayCheck.checked,
           overlayOpacity: Number(overlayOpacity.value),
           particleScheme: schemeSelect.value,
-          projection: projMapCheck.checked ? 'map' : 'globe',
+          projection: projSelect.value === 'map' ? 'map' : 'globe',
           mapCenterLon: Number(centerLonSlider.value),
+          panelCollapsed: document.getElementById('panel')!.classList.contains('collapsed'),
+          panelSection: activeSection(),
           tz: displayTz,
           autoFetch: autoFetchCheck.checked,
           showFps: showFpsCheck.checked,
@@ -350,24 +384,36 @@ async function init(): Promise<void> {
     controls.enabled = true;
   }
 
+  // 切替時のカメラ移動先。画面中央に見えている地点を注視点として引き継ぎ、
+  // 地表 (地図面) とカメラの距離も保つ
   function setProjection(map: boolean): void {
     proj.target = map ? 1 : 0;
+    const clampLat = (lat: number) => Math.max(-MAX_MERC_LAT, Math.min(MAX_MERC_LAT, lat));
     if (map) {
-      // 地図の中心 (表示経度0° = +X 方向) の正面、全体が収まる距離へ
-      camAnim = { pos: new THREE.Vector3(MAP_CAMERA_DIST, 0, 0), tgt: new THREE.Vector3() };
+      // 地球儀の画面中央の地点 (カメラ直下の表示経緯度) を平面上の同じ地点へ
+      const dir = camera.position.clone().normalize();
+      const lat = clampLat((Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1)) * 180) / Math.PI);
+      const dlon = wrapLon((Math.atan2(dir.z, -dir.x) * 180) / Math.PI - 180); // lonLatToVector3 の逆変換
+      const tgt = lonLatToPlane(dlon, lat, 1); // 地図面上の注視点 (x=0)
+      const surfDist = Math.min(MAX_DIST, Math.max(MAP_MIN_DIST, camera.position.length() - 1));
+      camAnim = { pos: tgt.clone().add(new THREE.Vector3(surfDist, 0, 0)), tgt };
     } else {
-      // 現在の視線方向を保ったまま、地球儀の距離レンジに収めて戻る
-      const dist = Math.min(MAX_DIST, Math.max(GLOBE_MIN_DIST, camera.position.length()));
+      // 平面上の注視点を逆メルカトルで経緯度に戻し、地球儀上の同じ地点を正面へ
+      const lat = clampLat(
+        ((2 * Math.atan(Math.exp(controls.target.y / MAP_SCALE)) - Math.PI / 2) * 180) / Math.PI,
+      );
+      const dlon = wrapLon(((-controls.target.z / MAP_SCALE) * 180) / Math.PI);
+      const dist = Math.min(MAX_DIST, Math.max(GLOBE_MIN_DIST, camera.position.x + 1));
       camAnim = {
-        pos: camera.position.clone().normalize().multiplyScalar(dist),
+        pos: lonLatToVector3(dlon, lat, 1).multiplyScalar(dist),
         tgt: new THREE.Vector3(),
       };
     }
     controls.enabled = false; // 遷移中は手動でカメラを動かす
   }
 
-  projMapCheck.addEventListener('change', () => {
-    setProjection(projMapCheck.checked);
+  projSelect.addEventListener('change', () => {
+    setProjection(projSelect.value === 'map');
     scheduleSave();
   });
 
@@ -419,7 +465,7 @@ async function init(): Promise<void> {
   centerLonValue.textContent = centerLonLabel(Number(centerLonSlider.value));
   applyCenterLonNow(false);
 
-  if (projMapCheck.checked) {
+  if (projSelect.value === 'map') {
     // 保存済み設定が平面なら、モーフ済みの状態から開始する
     proj.value = proj.target = 1;
     applyMorph();
@@ -664,12 +710,8 @@ async function init(): Promise<void> {
   const histTime = document.getElementById('hist-time') as HTMLInputElement;
   const histBtn = document.getElementById('hist-btn') as HTMLButtonElement;
 
-  // 既定値: 1 年前の 0 時(選択中タイムゾーンで表示)。上限は現在時刻
-  {
-    const now = new Date();
-    const pastMs = Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate());
-    histTime.value = tzInputValue(pastMs);
-  }
+  // 既定値: 現在時刻(選択中タイムゾーンで表示)。上限も現在時刻
+  histTime.value = tzInputValue(Date.now());
 
   // 現在表示中のデータ情報。タイムゾーン・言語変更時にラベルを作り直すため保持する
   let curField: WindField | null = null;
@@ -691,9 +733,17 @@ async function init(): Promise<void> {
     }
   }
 
+  const fetchCancelBtn = document.getElementById('fetch-cancel') as HTMLButtonElement;
+  fetchCancelBtn.addEventListener('click', () => {
+    fetchCancelBtn.disabled = true; // 二度押し防止。取得終了時に戻す
+    void window.windApi.cancelFetch();
+  });
+
   async function runFetch(fetcher: () => Promise<WindApiResult>): Promise<void> {
     fetchBtn.disabled = true;
     histBtn.disabled = true;
+    fetchCancelBtn.disabled = false;
+    fetchCancelBtn.hidden = false;
     fetchStatus.textContent = t('fetching');
     try {
       const result = await fetcher();
@@ -708,10 +758,13 @@ async function init(): Promise<void> {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // IPC 経由のエラーは定型の前置きが付くので除去する
-      fetchStatus.textContent = `${t('fetchFail')}${message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`;
+      const stripped = message.replace(/^Error invoking remote method '[^']+': Error: /, '');
+      fetchStatus.textContent =
+        stripped === 'cancelled' ? t('fetchCancelled') : `${t('fetchFail')}${stripped}`;
     } finally {
       fetchBtn.disabled = false;
       histBtn.disabled = false;
+      fetchCancelBtn.hidden = true;
     }
   }
 
@@ -975,12 +1028,11 @@ async function init(): Promise<void> {
   syncDbSource();
   dbSource.addEventListener('change', syncDbSource);
 
-  // アーカイブ日時の既定値: 1 年前の 0 時から 24 時間(選択中タイムゾーンで表示)
+  // アーカイブ日時の既定値: 直近 24 時間(24 時間前〜現在、選択中タイムゾーンで表示)
   {
-    const now = new Date();
-    const startMs = Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), now.getUTCDate());
-    dbStart.value = tzInputValue(startMs);
-    dbEnd.value = tzInputValue(startMs + 24 * 3600_000);
+    const nowMs = Date.now();
+    dbStart.value = tzInputValue(nowMs - 24 * 3600_000);
+    dbEnd.value = tzInputValue(nowMs);
   }
 
   dbFcstStart.addEventListener('input', () => {
@@ -993,11 +1045,18 @@ async function init(): Promise<void> {
     dbStepValue.textContent = `${dbStep.value}h`;
   });
 
+  const dbBuildCancelBtn = document.getElementById('db-build-cancel') as HTMLButtonElement;
+  dbBuildCancelBtn.addEventListener('click', () => {
+    dbBuildCancelBtn.disabled = true; // 二度押し防止。ビルド終了時に戻す
+    void window.windApi.cancelFetch();
+  });
+
   window.windApi.onBuildProgress((p) => {
     if (p.phase === 'running') {
       dbBuildStatus.textContent = tBuildRunning(p.current, p.total, p.saved);
     } else if (p.phase === 'done') {
-      dbBuildStatus.textContent = p.message ?? tBuildDone(p.saved);
+      dbBuildStatus.textContent =
+        p.message ?? (p.cancelled ? tBuildCancelled(p.saved) : tBuildDone(p.saved));
     }
   });
 
@@ -1029,6 +1088,8 @@ async function init(): Promise<void> {
       };
     }
     dbBuildBtn.disabled = true;
+    dbBuildCancelBtn.disabled = false;
+    dbBuildCancelBtn.hidden = false;
     dbBuildStatus.textContent = t('buildPreparing');
     window.windApi
       .dbBuild(opts)
@@ -1042,6 +1103,7 @@ async function init(): Promise<void> {
       })
       .finally(() => {
         dbBuildBtn.disabled = false;
+        dbBuildCancelBtn.hidden = true;
       });
   });
 
@@ -1177,6 +1239,12 @@ async function init(): Promise<void> {
 
   // M キーで左上メニューの表示/非表示をトグルする
   const panelEl = document.getElementById('panel')!;
+
+  // タイトルクリックでメニューをタイトルバーだけに折りたたむ
+  document.getElementById('panel-title')!.addEventListener('click', () => {
+    panelEl.classList.toggle('collapsed');
+    scheduleSave();
+  });
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'm' && e.key !== 'M') return;
     if (isTypingTarget(e.target)) return;

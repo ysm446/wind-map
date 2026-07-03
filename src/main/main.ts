@@ -40,24 +40,53 @@ ipcMain.handle('wind:get', async () => {
   return null;
 });
 
+// 実行中の取得 (最新・過去・区間ビルド) の中断用。同時実行は UI 側で抑止しており、
+// 新しい取得を始めるときは前の取得を打ち切る
+let activeFetch: AbortController | null = null;
+
+function beginFetch(): AbortController {
+  activeFetch?.abort();
+  const controller = new AbortController();
+  activeFetch = controller;
+  return controller;
+}
+
+function endFetch(controller: AbortController): void {
+  if (activeFetch === controller) activeFetch = null;
+}
+
+ipcMain.handle('fetch:cancel', async () => {
+  activeFetch?.abort();
+});
+
 // NOMADS から最新の GFS 地上風を取得してキャッシュする
 ipcMain.handle('wind:fetch', async (_event, opts: { forecastHour?: number } | undefined) => {
   const forecastHour = typeof opts?.forecastHour === 'number' ? opts.forecastHour : 0;
-  const result = await fetchGfsWind(forecastHour);
-  const cacheDir = path.join(app.getPath('userData'), 'wind-cache');
-  fs.mkdirSync(cacheDir, { recursive: true });
-  fs.writeFileSync(path.join(cacheDir, 'current-wind.json'), JSON.stringify(result.records));
-  return { source: 'nomads', records: result.records };
+  const controller = beginFetch();
+  try {
+    const result = await fetchGfsWind(forecastHour, controller.signal);
+    const cacheDir = path.join(app.getPath('userData'), 'wind-cache');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, 'current-wind.json'), JSON.stringify(result.records));
+    return { source: 'nomads', records: result.records };
+  } finally {
+    endFetch(controller);
+  }
 });
 
 // AWS の GFS アーカイブから過去日時の地上風を取得してキャッシュする
 ipcMain.handle('wind:fetch-archive', async (_event, opts: { time?: string } | undefined) => {
   if (!opts?.time) throw new Error('日時が指定されていません');
-  const result = await fetchArchiveWind(opts.time);
-  const cacheDir = path.join(app.getPath('userData'), 'wind-cache');
-  fs.mkdirSync(cacheDir, { recursive: true });
-  fs.writeFileSync(path.join(cacheDir, 'current-wind.json'), JSON.stringify(result.records));
-  return { source: 'archive', records: result.records };
+  const controller = beginFetch();
+  try {
+    const result = await fetchArchiveWind(opts.time, controller.signal);
+    const cacheDir = path.join(app.getPath('userData'), 'wind-cache');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, 'current-wind.json'), JSON.stringify(result.records));
+    return { source: 'archive', records: result.records };
+  } finally {
+    endFetch(controller);
+  }
 });
 
 // 風データDB: 保存済みコレクションの一覧・取得・削除・改名・区間ビルド
@@ -79,9 +108,18 @@ ipcMain.handle('db:rename', async (_event, opts: { id: string; name: string }) =
 
 // 区間を取得して新規コレクションを作る。進捗は db:build-progress で逐次送る。
 ipcMain.handle('db:build', async (event, opts: BuildOptions) => {
-  return buildCollection(opts, (p) => {
-    if (!event.sender.isDestroyed()) event.sender.send('db:build-progress', p);
-  });
+  const controller = beginFetch();
+  try {
+    return await buildCollection(
+      opts,
+      (p) => {
+        if (!event.sender.isDestroyed()) event.sender.send('db:build-progress', p);
+      },
+      controller.signal,
+    );
+  } finally {
+    endFetch(controller);
+  }
 });
 
 // 画面のスクリーンショットを data/screenshots に保存する

@@ -43,7 +43,7 @@ body {
   position: fixed;
   top: 12px;
   left: 12px;
-  width: 240px;
+  width: 400px;
   max-height: calc(100vh - 24px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -68,43 +68,58 @@ body {
   background: transparent;
 }
 
-/* 折りたたみセクション共通スタイル */
-.section {
-  margin-bottom: 8px;
+/* 2 ペイン構成: 左にセクション一覧、右に選択中セクションの内容 */
+#panel-main {
+  display: flex;
+  gap: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-top: 8px;
+  padding-top: 10px;
 }
 
-.section > summary {
-  cursor: pointer;
+#section-nav {
+  flex: 0 0 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#section-nav .nav-item {
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 6px 8px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
   color: #9fb4d4;
   font-weight: 600;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 0;
-  margin-bottom: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.section[open] > summary {
-  margin-bottom: 10px;
+#section-nav .nav-item:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.section > summary::-webkit-details-marker {
+#section-nav .nav-item.active {
+  background: rgba(159, 180, 212, 0.15);
+  color: #e6edf7;
+}
+
+#section-panes {
+  flex: 1;
+  min-width: 0;
+}
+
+.pane {
   display: none;
 }
 
-/* 開閉を示す三角マーカー */
-.section > summary::before {
-  content: "▸";
-  font-size: 10px;
-  color: #6f7e94;
-  transition: transform 0.12s;
-}
-
-.section[open] > summary::before {
-  transform: rotate(90deg);
+.pane.active {
+  display: block;
 }
 
 #panel.hidden {
@@ -116,6 +131,37 @@ body {
   font-weight: 600;
   color: #e6edf7;
   margin-bottom: 6px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* タイトル右端の開閉インジケーター */
+#panel h1::after {
+  content: "▾";
+  font-size: 11px;
+  color: #6f7e94;
+  transition: transform 0.12s;
+}
+
+/* タイトルクリックでメニュー全体をタイトルバーだけに折りたたむ */
+#panel.collapsed h1 {
+  margin-bottom: 0;
+}
+
+#panel.collapsed h1::after {
+  transform: rotate(-90deg);
+}
+
+#panel.collapsed #panel-body {
+  display: none;
+}
+
+#panel.collapsed {
+  width: auto;
+  min-width: 132px;
+  padding: 8px 12px;
 }
 
 .meta {
@@ -137,6 +183,53 @@ body {
 .control-label .value {
   font-family: Consolas, "Cascadia Mono", monospace;
   color: #9fb4d4;
+}
+
+/* 1 行レイアウトの項目行: 左に項目名、右にパラメータ + 値。
+   長い項目名は省略記号で切り、行の高さを一定に保つ */
+.control.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 6px;
+  margin-bottom: 10px;
+}
+
+.control.row .control-label {
+  display: contents;
+}
+
+.control.row .control-label > span:first-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control.row .control-label .value {
+  order: 10;
+  flex: 0 0 auto;
+  min-width: 32px;
+  text-align: right;
+}
+
+.control.row > input[type="range"] {
+  flex: 1 1 60px;
+  min-width: 0;
+  width: auto;
+}
+
+.control.row > select {
+  flex: 1 1 100px;
+  min-width: 0;
+  width: auto;
+}
+
+/* 行内に収まらない付属要素 (凡例など) は次の行へ全幅で置く */
+.control.row > #speed-legend {
+  flex: 1 1 100%;
 }
 
 input[type="range"] {

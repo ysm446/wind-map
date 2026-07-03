@@ -73,9 +73,15 @@ export function buildFilterUrl(run: Date, forecastHour: number): string {
   return `${FILTER_BASE}?${params.toString()}`;
 }
 
-async function fetchBinary(url: string, timeoutMs = 90_000): Promise<Uint8Array | null> {
+async function fetchBinary(
+  url: string,
+  timeoutMs = 90_000,
+  signal?: AbortSignal,
+): Promise<Uint8Array | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => controller.abort();
+  signal?.addEventListener('abort', onAbort, { once: true });
   try {
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) return null;
@@ -84,6 +90,7 @@ async function fetchBinary(url: string, timeoutMs = 90_000): Promise<Uint8Array 
     return null;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
   }
 }
 
@@ -117,15 +124,20 @@ export function gribMessageToRecord(msg: Grib2Message): GfsRecord {
   };
 }
 
-// 最新の利用可能なランを探して地上10m風を取得する
-export async function fetchGfsWind(forecastHour: number): Promise<GfsFetchResult> {
+// 最新の利用可能なランを探して地上10m風を取得する。
+// signal で中断できる (中断時は 'cancelled' を投げる)
+export async function fetchGfsWind(
+  forecastHour: number,
+  signal?: AbortSignal,
+): Promise<GfsFetchResult> {
   const fh = Math.max(
     0,
     Math.min(MAX_FORECAST_HOUR, Math.round(forecastHour / STEP_HOURS) * STEP_HOURS),
   );
 
   for (const run of candidateRuns()) {
-    const bytes = await fetchBinary(buildFilterUrl(run, fh));
+    const bytes = await fetchBinary(buildFilterUrl(run, fh), undefined, signal);
+    if (signal?.aborted) throw new Error('cancelled');
     if (!bytes || !isGrib(bytes)) continue; // ラン未公開時は HTML エラーページが返る
 
     const messages = decodeGrib2(bytes);

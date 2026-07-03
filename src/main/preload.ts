@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('windApi', {
   getWindData: () => ipcRenderer.invoke('wind:get'),
   fetchWind: (forecastHour: number) => ipcRenderer.invoke('wind:fetch', { forecastHour }),
   fetchArchiveWind: (time: string) => ipcRenderer.invoke('wind:fetch-archive', { time }),
+  cancelFetch: () => ipcRenderer.invoke('fetch:cancel'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('settings:set', settings),
   captureScreenshot: () => ipcRenderer.invoke('screenshot:capture'),

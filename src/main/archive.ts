@@ -67,10 +67,12 @@ function findRange(entries: IdxEntry[], key: string): { start: number; end?: num
 
 async function fetchUrl(
   url: string,
-  init: { range?: string; timeoutMs?: number } = {},
+  init: { range?: string; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<Response | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), init.timeoutMs ?? 90_000);
+  const onAbort = () => controller.abort();
+  init.signal?.addEventListener('abort', onAbort, { once: true });
   try {
     const res = await fetch(url, {
       signal: controller.signal,
@@ -81,11 +83,16 @@ async function fetchUrl(
     return null;
   } finally {
     clearTimeout(timer);
+    init.signal?.removeEventListener('abort', onAbort);
   }
 }
 
-// 過去日時 (UTC) の地上10m風を取得する
-export async function fetchArchiveWind(targetIso: string): Promise<ArchiveFetchResult> {
+// 過去日時 (UTC) の地上10m風を取得する。
+// signal で中断できる (中断時は 'cancelled' を投げる)
+export async function fetchArchiveWind(
+  targetIso: string,
+  signal?: AbortSignal,
+): Promise<ArchiveFetchResult> {
   const target = new Date(targetIso);
   if (Number.isNaN(target.getTime())) throw new Error(`不正な日時です: ${targetIso}`);
   if (target.getTime() < ARCHIVE_START_MS) {
@@ -95,7 +102,8 @@ export async function fetchArchiveWind(targetIso: string): Promise<ArchiveFetchR
   const { run, forecastHour } = planRequest(target);
 
   for (const url of candidateUrls(run, forecastHour)) {
-    const idxRes = await fetchUrl(`${url}.idx`, { timeoutMs: 30_000 });
+    const idxRes = await fetchUrl(`${url}.idx`, { timeoutMs: 30_000, signal });
+    if (signal?.aborted) throw new Error('cancelled');
     if (!idxRes) continue;
     const entries = parseIdx(await idxRes.text());
 
@@ -111,7 +119,9 @@ export async function fetchArchiveWind(targetIso: string): Promise<ArchiveFetchR
         : undefined;
     const dataRes = await fetchUrl(url, {
       range: `bytes=${start}-${end !== undefined ? end : ''}`,
+      signal,
     });
+    if (signal?.aborted) throw new Error('cancelled');
     if (!dataRes) continue;
 
     const bytes = new Uint8Array(await dataRes.arrayBuffer());

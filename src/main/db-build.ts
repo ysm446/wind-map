@@ -29,6 +29,7 @@ export interface BuildProgress {
   current: number; // 処理済みステップ数
   total: number; // 総ステップ数
   saved: number; // 保存できたフレーム数
+  cancelled?: boolean; // ユーザー操作で中断された (取得済みフレームは保存される)
   message?: string;
 }
 
@@ -54,6 +55,7 @@ function planSteps(opts: BuildOptions): number[] {
 export async function buildCollection(
   opts: BuildOptions,
   onProgress: (p: BuildProgress) => void,
+  signal?: AbortSignal,
 ): Promise<CollectionSummary | null> {
   const steps = planSteps(opts);
   if (steps.length === 0) throw new Error('取得対象の時刻がありません');
@@ -61,19 +63,24 @@ export async function buildCollection(
   const builder = new CollectionBuilder(opts.name, opts.kind);
   const total = steps.length;
   let lastValid = '';
+  let cancelled = false;
 
   try {
     for (let i = 0; i < steps.length; i++) {
+      if (signal?.aborted) {
+        cancelled = true;
+        break;
+      }
       onProgress({ phase: 'running', current: i, total, saved: builder.frameCount });
       try {
         let records, refTime, forecastHour;
         if (opts.kind === 'forecast') {
-          const r = await fetchGfsWind(steps[i]);
+          const r = await fetchGfsWind(steps[i], signal);
           records = r.records;
           refTime = r.refTime;
           forecastHour = r.forecastHour;
         } else {
-          const r = await fetchArchiveWind(new Date(steps[i]).toISOString());
+          const r = await fetchArchiveWind(new Date(steps[i]).toISOString(), signal);
           records = r.records;
           refTime = r.refTime;
           forecastHour = r.forecastHour;
@@ -84,7 +91,12 @@ export async function buildCollection(
         lastValid = valid;
         builder.addFrame(records, valid, refTime, forecastHour);
       } catch (err) {
+        // キャンセルなら中断 (取得済みフレームで確定する)。それ以外の
         // 1 フレームの失敗は致命傷にせず続行する
+        if (signal?.aborted) {
+          cancelled = true;
+          break;
+        }
         console.error('frame fetch failed', err);
       }
     }
@@ -99,7 +111,8 @@ export async function buildCollection(
     current: total,
     total,
     saved: summary?.frameCount ?? 0,
-    message: summary ? undefined : '保存できたフレームがありませんでした',
+    cancelled,
+    message: summary || cancelled ? undefined : '保存できたフレームがありませんでした',
   });
   return summary;
 }

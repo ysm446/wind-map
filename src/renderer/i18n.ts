@@ -7,10 +7,10 @@ export type Lang = 'ja' | 'en';
 const STRINGS: Record<string, { ja: string; en: string }> = {
   // セクション見出し
   secParticles: { ja: 'パーティクル', en: 'Particles' },
-  secOverlay: { ja: '風速オーバーレイ', en: 'Wind speed overlay' },
-  secAppearance: { ja: '表示設定', en: 'Display settings' },
+  secOverlay: { ja: 'オーバーレイ', en: 'Overlay' },
+  secAppearance: { ja: '表示設定', en: 'Display' },
   secData: { ja: 'データ取得', en: 'Data fetch' },
-  secDb: { ja: '保存データ / アニメーション', en: 'Saved data / Animation' },
+  secDb: { ja: '保存データ', en: 'Saved data' },
 
   // パーティクル
   particleCount: { ja: '粒子数', en: 'Particle count' },
@@ -20,19 +20,21 @@ const STRINGS: Record<string, { ja: string; en: string }> = {
 
   // オーバーレイ
   overlayToggle: { ja: '風速カラーオーバーレイ', en: 'Wind speed color overlay' },
-  overlayOpacity: { ja: 'オーバーレイ濃度', en: 'Overlay opacity' },
+  overlayOpacity: { ja: '濃度', en: 'Opacity' },
 
   // 表示設定
-  projMap: { ja: '2D マップ(メルカトル図法)', en: '2D map (Mercator)' },
-  centerLon: { ja: '地図の中央経度', en: 'Map center longitude' },
-  timezone: { ja: '時刻のタイムゾーン', en: 'Time zone' },
+  projLabel: { ja: '投影法', en: 'Projection' },
+  projGlobe: { ja: '地球儀', en: 'Globe' },
+  projMercator: { ja: '2D マップ(メルカトル)', en: '2D map (Mercator)' },
+  centerLon: { ja: '中央経度', en: 'Center longitude' },
+  timezone: { ja: 'タイムゾーン', en: 'Time zone' },
   showFps: { ja: 'FPS を表示する', en: 'Show FPS' },
   showLegend: { ja: '風速の凡例を表示', en: 'Show wind speed legend' },
   windSpeed: { ja: '風速 (m/s)', en: 'Wind speed (m/s)' },
   screenshotSaved: { ja: 'スクリーンショットを保存: ', en: 'Screenshot saved: ' },
   screenshotFailed: { ja: 'スクリーンショットの保存に失敗しました', en: 'Failed to save screenshot' },
   language: { ja: '言語', en: 'Language' },
-  particleScheme: { ja: 'パーティクル配色', en: 'Particle colors' },
+  particleScheme: { ja: '粒子の配色', en: 'Particle colors' },
   schemeStandard: { ja: '標準', en: 'Standard' },
   schemeEarth: { ja: 'アース', en: 'Earth' },
   colCoast: { ja: '海岸線', en: 'Coastlines' },
@@ -65,7 +67,7 @@ const STRINGS: Record<string, { ja: string; en: string }> = {
   fcstEnd: { ja: '終了予報時刻', en: 'End forecast hour' },
   step: { ja: '時間刻み', en: 'Time step' },
   saveRange: { ja: 'この区間を保存', en: 'Save this range' },
-  speedPerFrame: { ja: '速度 (秒/コマ)', en: 'Speed (sec/frame)' },
+  speedPerFrame: { ja: '秒/コマ', en: 'Sec/frame' },
   inPoint: { ja: '開始位置', en: 'Start point' },
   outPoint: { ja: '終了位置', en: 'End point' },
   interp: { ja: 'フレーム補間', en: 'Frame interpolation' },
@@ -90,6 +92,8 @@ const STRINGS: Record<string, { ja: string; en: string }> = {
   fetching: { ja: '取得中…', en: 'Fetching…' },
   fetchDone: { ja: '取得完了', en: 'Done' },
   fetchFail: { ja: '取得失敗: ', en: 'Failed: ' },
+  cancel: { ja: 'キャンセル', en: 'Cancel' },
+  fetchCancelled: { ja: 'キャンセルしました', en: 'Cancelled' },
   cannotParse: { ja: 'データを解釈できませんでした', en: 'Could not parse data' },
   enterDateTime: { ja: '日時を入力してください', en: 'Please enter a date-time' },
   updatedLatest: { ja: '最新データに更新しました', en: 'Updated to latest data' },
@@ -126,6 +130,13 @@ export function tBuildRunning(current_: number, total: number, saved: number): s
 // "保存完了(5コマ)" / "Saved (5 frames)"
 export function tBuildDone(saved: number): string {
   return getLang() === 'ja' ? `保存完了(${saved}コマ)` : `Saved (${saved} frames)`;
+}
+
+// "キャンセルしました(3コマ保存)" / "Cancelled (3 frames saved)"
+export function tBuildCancelled(saved: number): string {
+  return getLang() === 'ja'
+    ? `キャンセルしました(${saved}コマ保存)`
+    : `Cancelled (${saved} frames saved)`;
 }
 
 // "「名前」を削除しますか?" / 'Delete "name"?'
